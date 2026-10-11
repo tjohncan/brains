@@ -1,6 +1,18 @@
-# If you prefer the allow list template instead of the deny list, see community template:
-# https://github.com/github/gitignore/blob/main/community/Golang/Go.AllowList.gitignore
-#
+## Project-specific settings
+
+# REPOS is present but content-ignored: its README is tracked and everything else inside stays local.
+REPOS/*
+!REPOS/README.md
+
+# Personal drop zone -- never tracked
+TEMP/
+
+# Build output
+/brains.exe
+
+
+## General settings
+
 # Binaries for programs and plugins
 *.exe
 *.exe~
@@ -11,6 +23,10 @@
 # Test binary, built with `go test -c`
 *.test
 
+# Go workspace file
+go.work
+go.work.sum
+
 # Code coverage profiles and other test artifacts
 *.out
 coverage.*
@@ -18,16 +34,17 @@ coverage.*
 *.coverprofile
 profile.cov
 
-# Dependency directories (remove the comment below to include it)
-# vendor/
+# Editor
+.idea/
+.vscode/
+.claude/
+*.swp
+*.swo
+*~
 
-# Go workspace file
-go.work
-go.work.sum
+# OS
+Thumbs.db
+.DS_Store
 
-# env file
+# Secrets / local config
 .env
-
-# Editor/IDE
-# .idea/
-# .vscode/

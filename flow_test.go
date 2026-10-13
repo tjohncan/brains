@@ -556,7 +556,7 @@ func TestRolesAreDefinedNotTyped(t *testing.T) {
 	if _, err := st.register(registration{role: "fixer", repo: "o/r"}); err == nil || !strings.Contains(err.Error(), "no roles are defined") {
 		t.Errorf("register with no roles: err = %v, want refused", err)
 	}
-	for _, bad := range []string{"Bad Name", "fixer!", "-fixer", "a-very-long-role-name-indeed"} {
+	for _, bad := range []string{"Bad Name", "fixer!", "-fixer", "2fa", "a-very-long-role-name-indeed"} {
 		if _, err := st.defineRole(bad, "x", nil); err == nil {
 			t.Errorf("defined a role named %q", bad)
 		}

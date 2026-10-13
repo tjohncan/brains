@@ -185,7 +185,7 @@ create table role (
 
 , constraint uix_role_id unique(id)
 , constraint uix_role_code_name unique(code_name)
-, constraint ck_role_code_name check(length(code_name) between 1 and 20 and code_name not glob '*[^a-z0-9-]*')
+, constraint ck_role_code_name check(length(code_name) between 1 and 20 and code_name glob '[a-z]*' and code_name not glob '*[^a-z0-9-]*')
 , constraint ck_role_description_len check(length(description) <= 2000)
 , constraint ck_role_is_fresh_eyes check(is_fresh_eyes in (0, 1))
 );

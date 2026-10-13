@@ -42,8 +42,8 @@ func findRole(ex execer, name string) (roleInfo, error) {
 // change touches only what's given. Only you define roles.
 func (s *store) defineRole(name, description string, freshEyes *bool) (created bool, err error) {
 	name, description = strings.ToLower(strings.TrimSpace(name)), strings.TrimSpace(description)
-	if name == "" || slug(name) != name {
-		return false, fmt.Errorf("role %q: a name is lowercase letters and digits, with single hyphens between, at most 20 characters", name)
+	if name == "" || slug(name) != name || name[0] < 'a' || name[0] > 'z' {
+		return false, fmt.Errorf("role %q: a name is lowercase letters and digits, with single hyphens between, starting with a letter, at most 20 characters", name)
 	}
 	var fresh any
 	if freshEyes != nil {

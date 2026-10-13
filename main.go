@@ -90,6 +90,10 @@ func main() {
 	if errors.Is(err, flag.ErrHelp) {
 		return
 	}
+	// claude has said what went wrong; pass on how it exited.
+	if exit := (*exec.ExitError)(nil); errors.As(err, &exit) {
+		os.Exit(exit.ExitCode())
+	}
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "brains:", err)
 		os.Exit(1)

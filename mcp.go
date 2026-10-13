@@ -240,9 +240,9 @@ func beliefScope(b scopedBelief) string {
 	case b.role == "":
 		return "On " + b.repo
 	case b.repo == "":
-		return "For a " + b.role
+		return "For every " + b.role
 	}
-	return "For a " + b.role + " on " + b.repo
+	return "For every " + b.role + " on " + b.repo
 }
 
 // beliefSection lists beliefs for the session to follow, under a heading for

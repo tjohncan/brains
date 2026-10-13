@@ -365,7 +365,7 @@ func TestFreshFixer(t *testing.T) {
 	r := mcpExchange(t, st, fixer.code[len(fixer.code)-4:], initializeRequest, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	told, _ := r["1"]["result"].(map[string]any)["instructions"].(string)
 	want := "For every session:\n- Never push; the owner pushes.\n\nOn owner/app:\n" +
-		"- Build in WSL, against a copy.\n\nFor a fixer:\n- No diary comments."
+		"- Build in WSL, against a copy.\n\nFor every fixer:\n- No diary comments."
 	if !strings.Contains(told, fixer.called()+": fixer on owner/app") || !strings.Contains(told, "Check the handoff") ||
 		!strings.Contains(told, want) || strings.Contains(told, "Auditors only") || strings.Contains(told, "Another repo") {
 		t.Errorf("instructions = %q\nwant the session, how to work, and exactly the beliefs that reach it:\n%s", told, want)

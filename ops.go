@@ -656,12 +656,18 @@ func (s *store) file(sess *sessionInfo, in fileInput) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if to.freshEyes {
+			return "", fmt.Errorf("%s works with fresh eyes, so it has no inbox to read this in", to.called())
+		}
 		toPin = to.pin
 	}
 	if in.toRole != "" {
 		role, err := findRole(tx, in.toRole)
 		if err != nil {
 			return "", err
+		}
+		if role.freshEyes {
+			return "", fmt.Errorf("the %s role works with fresh eyes, so it has no inbox to read this in", role.code)
 		}
 		rolePin = role.pin
 	}

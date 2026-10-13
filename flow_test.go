@@ -143,6 +143,12 @@ func TestAuditLoop(t *testing.T) {
 		t.Errorf("resolution = %q, want the fixer's words", d.resolution)
 	}
 
+	for _, in := range []fileInput{{toSession: auditor.nickname}, {toRole: "auditor", repo: "owner/app"}} {
+		in.typ, in.title = "handoff", "Please re-audit"
+		if _, err := st.file(fixer, in); err == nil || !strings.Contains(err.Error(), "fresh eyes") {
+			t.Errorf("a handoff to fresh eyes (%+v): err = %v, want refused: nothing there reads it", in, err)
+		}
+	}
 	handoff := mustFile(t, st, rival, fileInput{typ: "handoff", title: "Take over CORS", body: "notes", toSession: fixer.code})
 	if _, err := st.show(auditor, handoff, "peek", true); err == nil {
 		t.Error("fresh eyes opened a task someone else filed")
@@ -988,7 +994,7 @@ func TestNicknames(t *testing.T) {
 	if sess, _, err := findSession(st.db, "Auditor2"); err != nil || sess.code != second.code || sess.nickname != "auditor2" {
 		t.Errorf("findSession(auditor2) = %+v, %v; want %s", sess, err, second.code)
 	}
-	if _, err := st.file(fixer, fileInput{typ: "handoff", title: "For hm", toSession: "hm"}); err != nil {
+	if _, err := st.file(named, fileInput{typ: "handoff", title: "For fixer1", toSession: "fixer1"}); err != nil {
 		t.Errorf("a handoff to a session by nickname: %v", err)
 	}
 

@@ -863,7 +863,19 @@ func (s *store) close(sess *sessionInfo, code, outcome, dupOf, resolution string
 		if dup.pin == ref.pin {
 			return errors.New("a task can't be a duplicate of itself")
 		}
-		dupPin = dup.pin
+		// A duplicate names the task that carries the outcome: the end of any
+		// chain of duplicates. A chain that ends here would be a loop.
+		var root int64
+		if err := tx.QueryRow(`with recursive chain(pin, next) as (
+			select pin, duplicate_of_task_pin from task where pin = ?
+			union select t.pin, t.duplicate_of_task_pin from task t join chain c on t.pin = c.next)
+			select pin from chain where next is null`, dup.pin).Scan(&root); err != nil {
+			return err
+		}
+		if root == ref.pin {
+			return fmt.Errorf("%s is already a duplicate of %s", dup.code, ref.code)
+		}
+		dupPin = root
 	}
 	if sess != nil {
 		by = sess.pin

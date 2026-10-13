@@ -157,6 +157,29 @@ func TestAuditLoop(t *testing.T) {
 	}
 }
 
+// TestDuplicatesNameTheOriginal: a duplicate of a duplicate names the task
+// that carries the outcome, and a loop is refused.
+func TestDuplicatesNameTheOriginal(t *testing.T) {
+	st := newStore(t)
+	fixer, auditor := mustRegister(t, st, "fixer"), mustRegister(t, st, "auditor")
+	file := func(title string) string {
+		return mustFile(t, st, auditor, fileInput{title: title, body: "b", toRole: "fixer", repo: "owner/app"})
+	}
+	original, repeat, again := file("Original"), file("Repeat"), file("Again")
+	if err := st.close(fixer, repeat, "duplicate", original, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.close(fixer, again, "duplicate", repeat, ""); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := st.show(nil, again, "", false); err != nil || d.dupOf != original {
+		t.Errorf("a duplicate of a duplicate names %v, %v; want %s", d, err, original)
+	}
+	if err := st.close(fixer, original, "duplicate", again, ""); err == nil {
+		t.Error("closed the original as a duplicate of its own duplicate")
+	}
+}
+
 func TestResumeKeepsTheSession(t *testing.T) {
 	st := newStore(t)
 	fixer := mustRegister(t, st, "fixer")

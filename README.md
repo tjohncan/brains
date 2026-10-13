@@ -88,7 +88,7 @@ This repo is set up to be that folder: clone the repos sessions work on into
 
 ## Setup
 
-Building takes Go 1.27 or later, and running sessions takes Claude Code, with `claude` on your
+Building takes Go 1.26 or later, and running sessions takes Claude Code, with `claude` on your
 PATH. From this folder:
 
     go build

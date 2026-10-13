@@ -37,6 +37,8 @@ its tools; you use the `brains` command.
   its filings, and doesn't register again.
 - A plain `claude` session has brains too. Tell it to register as a role on a repo; that records
   the conversation as well, so `brains resume` reaches it afterwards.
+- After compaction, or after beliefs change mid-session, tell a session to call brief: it reads
+  its role and beliefs again as brains has them then.
 
 ## See what's going on
 

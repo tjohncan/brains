@@ -35,8 +35,9 @@ over one SQLite file per user account.
 - **Fresh eyes** is a behavior a role can have. A fresh-eyes session can file findings and follow
   up on its own, and can't see anything else in brains, so earlier rounds can't steer it.
 
-brains offers sessions eleven MCP tools: register, file, withdraw, inbox, mine, show, claim,
-release, close, list, and propose. A fresh-eyes session gets four: file, withdraw, mine, and show.
+brains offers sessions twelve MCP tools: register, file, withdraw, inbox, mine, show, claim,
+release, close, list, propose, and brief. A fresh-eyes session gets five: file, withdraw, mine,
+show, and brief, which repeats a session's briefing on demand, as after compaction.
 
 Everything lives in the one SQLite file, not in CLAUDE.md files or Claude Code settings. brains
 logs every operation, with who did it and why, and keeps every earlier version of every row.

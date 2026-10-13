@@ -274,7 +274,7 @@ func TestMCPFreshEyes(t *testing.T) {
 			t.Errorf("instructions lack %q:\n%s", want, told)
 		}
 	}
-	if got, want := toolNames(t, r["2"]), []string{"file", "withdraw", "mine", "show"}; !reflect.DeepEqual(got, want) {
+	if got, want := toolNames(t, r["2"]), []string{"file", "withdraw", "mine", "show", "brief"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("fresh tools = %v, want %v", got, want)
 	}
 	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "already knows this session as "+auditor.code) {
@@ -312,7 +312,7 @@ func TestMCPFullMode(t *testing.T) {
 	if !strings.Contains(told, "Call register once") || !strings.Contains(told, "- Never push") || strings.Contains(told, "diary") {
 		t.Errorf("instructions before register = %q, want register asked for and only the beliefs for every session", told)
 	}
-	want := []string{"register", "file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose"}
+	want := []string{"register", "file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose", "brief"}
 	if got := toolNames(t, r["2"]); !reflect.DeepEqual(got, want) {
 		t.Errorf("tools = %v, want %v", got, want)
 	}
@@ -354,7 +354,7 @@ func TestRegisteringIntoFreshEyes(t *testing.T) {
 	if note := r["<nil>"]; note == nil || note["method"] != "notifications/tools/list_changed" {
 		t.Errorf("after register, notification = %v; want tools/list_changed", note)
 	}
-	if got, want := toolNames(t, r["5"]), []string{"file", "withdraw", "mine", "show"}; !reflect.DeepEqual(got, want) {
+	if got, want := toolNames(t, r["5"]), []string{"file", "withdraw", "mine", "show", "brief"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("tools after registering into fresh eyes = %v, want %v", got, want)
 	}
 	if text, _ := toolText(t, r["1"]); !strings.Contains(text, "fresh eyes") {
@@ -395,7 +395,8 @@ func TestFreshFixer(t *testing.T) {
 	if len(fixer.externalID) != 36 || one(t, st.db, "select external_id from session where pin = ?", fixer.pin) != fixer.externalID {
 		t.Errorf("external_id = %q, want the conversation's UUID recorded", fixer.externalID)
 	}
-	r := mcpExchange(t, st, fixer.code[len(fixer.code)-4:], initializeRequest, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	r := mcpExchange(t, st, fixer.code[len(fixer.code)-4:], initializeRequest, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		toolCall(3, "brief", nil))
 	told, _ := r["1"]["result"].(map[string]any)["instructions"].(string)
 	want := "For every session:\n- Never push; the owner pushes.\n\nOn owner/app:\n" +
 		"- Build in WSL, against a copy.\n\nFor every fixer:\n- No diary comments."
@@ -403,9 +404,12 @@ func TestFreshFixer(t *testing.T) {
 		!strings.Contains(told, want) || strings.Contains(told, "Auditors only") || strings.Contains(told, "Another repo") {
 		t.Errorf("instructions = %q\nwant the session, how to work, and exactly the beliefs that reach it:\n%s", told, want)
 	}
-	want2 := []string{"file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose"}
+	want2 := []string{"file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose", "brief"}
 	if got := toolNames(t, r["2"]); !reflect.DeepEqual(got, want2) {
 		t.Errorf("tools = %v, want %v", got, want2)
+	}
+	if text, isErr := toolText(t, r["3"]); isErr || !strings.Contains(text, want) || !strings.Contains(text, "Check the handoff") {
+		t.Errorf("brief = %q, %v; want the briefing again, beliefs included", text, isErr)
 	}
 }
 

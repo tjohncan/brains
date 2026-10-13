@@ -76,7 +76,7 @@ var mcpTools = []mcpTool{
 			"If a call seemed to be interrupted, check mine before filing again: the first one may have landed.",
 		props: []prop{
 			{"type", "audit_finding (the default), handoff, or improvement: a change worth making that isn't a defect.", taskTypes},
-			{"title", "One line.", nil},
+			{"title", "One line, at most 200 characters.", nil},
 			{"body", "The full text: what, where (files and lines), why it matters, and how to reproduce or verify.", nil},
 			{"severity", "For audit findings.", severities},
 			{"to_role", "The role it's for, for example fixer.", nil},

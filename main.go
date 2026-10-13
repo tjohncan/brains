@@ -466,7 +466,7 @@ func runTaskCommand(cmd string, args []string) error {
 	case "file":
 		var in fileInput
 		flags.StringVar(&in.typ, "type", "audit_finding", strings.Join(taskTypes, ", "))
-		flags.StringVar(&in.title, "title", "", "one line")
+		flags.StringVar(&in.title, "title", "", "one line, at most 200 characters")
 		flags.StringVar(&in.body, "body", "", "the full text")
 		bodyFile := flags.String("body-file", "", "read the body from this file")
 		flags.StringVar(&in.severity, "severity", "", "critical, high, medium, low, or info")

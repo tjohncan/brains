@@ -207,7 +207,38 @@ func (s *store) beliefsFor(sess *sessionInfo) ([]scopedBelief, error) {
 	return out, rows.Err()
 }
 
-type beliefRow struct{ code, status, statement, note, role, repo, from, replaces string }
+type beliefRow struct {
+	code, status, statement, note, role, repo, from, replaces string
+	added, updated                                            string
+}
+
+const beliefSelect = `
+select b.code_name, b.status, b.statement, coalesce(b.note, ''),
+       coalesce(ro.code_name, ''), coalesce(r.owner || '/' || r.name, ''), coalesce(fs.code_name, ''),
+       coalesce((select code_name from belief p where p.pin = b.replaces_belief_pin), ''), b.created_at, b.updated_at
+  from belief b
+  left join role ro on ro.pin = b.role_pin
+  left join repo r on r.pin = b.repo_pin
+  left join session fs on fs.pin = b.from_session_pin
+ where `
+
+func (s *store) queryBeliefs(where string, args ...any) ([]beliefRow, error) {
+	rows, err := s.db.Query(beliefSelect+where, args...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []beliefRow
+	for rows.Next() {
+		var r beliefRow
+		if err := rows.Scan(&r.code, &r.status, &r.statement, &r.note, &r.role, &r.repo, &r.from, &r.replaces,
+			&r.added, &r.updated); err != nil {
+			return nil, err
+		}
+		out = append(out, r)
+	}
+	return out, rows.Err()
+}
 
 // beliefs lists beliefs in one status (accepted unless asked otherwise), or
 // all. Given a role or a repo, only those that reach a session in that role
@@ -240,29 +271,65 @@ func (s *store) beliefs(status, role, repo string) ([]beliefRow, error) {
 		where = append(where, "(b.repo_pin is null or b.repo_pin = ?)")
 		args = append(args, pin)
 	}
-	rows, err := s.db.Query(`select b.code_name, b.status, b.statement, coalesce(b.note, ''),
-		       coalesce(ro.code_name, ''), coalesce(r.owner || '/' || r.name, ''), coalesce(fs.code_name, ''),
-		       coalesce((select code_name from belief p where p.pin = b.replaces_belief_pin), '')
-		  from belief b
-		  left join role ro on ro.pin = b.role_pin
-		  left join repo r on r.pin = b.repo_pin
-		  left join session fs on fs.pin = b.from_session_pin
-		 where `+strings.Join(where, " and ")+`
+	return s.queryBeliefs(strings.Join(where, " and ")+`
 		 order by case b.status when 'proposed' then 0 when 'accepted' then 1 else 2 end,
 		          b.role_pin is not null, b.repo_pin is not null, b.pin`, args...)
+}
+
+type beliefDetail struct {
+	beliefRow
+	replacedBy []string // the beliefs that name this one in replaces, with their status
+}
+
+// belief is one belief in full, in any status: what it says and why, who
+// proposed it, what it replaces, and what replaces it.
+func (s *store) belief(typed string) (*beliefDetail, error) {
+	ref, err := findBelief(s.db, typed)
 	if err != nil {
 		return nil, err
 	}
-	defer rows.Close()
-	var out []beliefRow
-	for rows.Next() {
-		var r beliefRow
-		if err := rows.Scan(&r.code, &r.status, &r.statement, &r.note, &r.role, &r.repo, &r.from, &r.replaces); err != nil {
-			return nil, err
-		}
-		out = append(out, r)
+	rows, err := s.queryBeliefs("b.pin = ?", ref.pin)
+	if err != nil {
+		return nil, err
 	}
-	return out, rows.Err()
+	if len(rows) == 0 {
+		return nil, fmt.Errorf("no belief %q", typed)
+	}
+	d := &beliefDetail{beliefRow: rows[0]}
+	d.replacedBy, err = strings0(s.db, `select code_name || ' (' || status || ')' from belief
+		 where replaces_belief_pin = ? order by pin`, ref.pin)
+	return d, err
+}
+
+func renderBelief(d *beliefDetail) string {
+	role, repo, from := d.role, d.repo, d.from
+	if role == "" {
+		role = "every role"
+	}
+	if repo == "" {
+		repo = "every repo"
+	}
+	if from == "" {
+		from = "you"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s  (belief)\n\n", d.code)
+	fmt.Fprintf(&b, "status:      %s\nfor:         %s on %s\nfrom:        %s\nadded:       %s UTC\n",
+		d.status, role, repo, from, d.added)
+	if d.updated != d.added {
+		fmt.Fprintf(&b, "updated:     %s UTC\n", d.updated)
+	}
+	if d.replaces != "" {
+		fmt.Fprintf(&b, "replaces:    %s\n", d.replaces)
+	}
+	if len(d.replacedBy) > 0 {
+		fmt.Fprintf(&b, "replaced by: %s\n", strings.Join(d.replacedBy, ", "))
+	}
+	b.WriteString("\n" + wrap(d.statement, "", 76))
+	if d.note != "" {
+		b.WriteString("\n" + wrap("why: "+d.note, "", 76))
+	}
+	return b.String()
 }
 
 func renderBeliefs(rows []beliefRow) string {

@@ -35,6 +35,7 @@ roles and beliefs, which sessions are told when they start:
   role NAME              show a role, or define or change it: -description TEXT  -fresh-eyes[=false]
   beliefs                list beliefs: -status accepted|proposed|retired|all, and with
                          -role R  -repo REPO, only those that reach that role and/or repo
+  belief CODE            show one belief in full, in any status, with its note
   believe STATEMENT      add a belief, accepted: [-role R]  [-repo REPO]  [-note WHY]
                          [-replaces CODE] retires the belief this one supersedes
   accept CODE...         accept proposed beliefs, retiring any belief they replace
@@ -76,7 +77,7 @@ func main() {
 		err = runResume(args)
 	case "roles", "role":
 		err = runRoleCommand(cmd, args)
-	case "beliefs", "believe", "accept", "reject", "retire":
+	case "beliefs", "belief", "believe", "accept", "reject", "retire":
 		err = runBeliefCommand(cmd, args)
 	case "tasks", "task", "file", "close", "sessions":
 		err = runTaskCommand(cmd, args)
@@ -401,7 +402,7 @@ func runRoleCommand(cmd string, args []string) error {
 	return nil
 }
 
-// runBeliefCommand lists beliefs, adds one, or settles one.
+// runBeliefCommand lists beliefs, shows one, adds one, or settles one.
 func runBeliefCommand(cmd string, args []string) error {
 	st, err := openStore()
 	if err != nil {
@@ -422,6 +423,16 @@ func runBeliefCommand(cmd string, args []string) error {
 			return err
 		}
 		fmt.Print(renderBeliefs(rows))
+	case "belief":
+		code, _, err := firstArg(cmd, "a belief's code", args)
+		if err != nil {
+			return err
+		}
+		d, err := st.belief(code)
+		if err != nil {
+			return err
+		}
+		fmt.Print(renderBelief(d))
 	case "believe":
 		statement, args, err := firstArg(cmd, "the belief, in quotes,", args)
 		if err != nil {

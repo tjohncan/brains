@@ -768,6 +768,15 @@ func TestReplacingABelief(t *testing.T) {
 	if got := told(); !reflect.DeepEqual(got, []string{"Docs say what's here now, and leave out today and new."}) {
 		t.Errorf("after accepting the replacement, the fixer is told %q, want only the sharper one", got)
 	}
+	// One belief in full names both ends of the replacement, retired or not.
+	if d, err := st.belief(original); err != nil || d.status != "retired" || len(d.replacedBy) != 1 ||
+		!strings.HasPrefix(d.replacedBy[0], sharper) {
+		t.Errorf("belief(original) = %+v, %v; want retired, replaced by %s", d, err, sharper)
+	}
+	if d, err := st.belief(sharper[len(sharper)-4:]); err != nil || d.replaces != original || d.from != fixer.code ||
+		!strings.Contains(renderBelief(d), "why: The owner's words") {
+		t.Errorf("belief(sharper) = %+v, %v; want it to name %s, its proposer, and its note", d, err, original)
+	}
 	if _, err := st.believe(nil, "Later still.", "fixer", "", "", original); err == nil {
 		t.Error("replaced a belief that was already retired")
 	}

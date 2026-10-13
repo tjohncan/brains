@@ -184,7 +184,7 @@ brains tools, because brains is registered with Claude Code at user scope.
     brains fresh [-as NAME] ROLE REPO      register a session and start Claude Code as it
     brains resume NAME | ROLE REPO         continue a session brains knows the conversation of
     brains roles | role              list roles; show, define, or change one
-    brains beliefs | believe | accept | reject | retire      work with beliefs
+    brains beliefs | belief | believe | accept | reject | retire      work with beliefs
     brains tasks | task | file | close | sessions          work with tasks as you
 
 MCP tools, full mode: register, file, withdraw, inbox, mine, show, claim, release, close, list,

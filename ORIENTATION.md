@@ -83,6 +83,7 @@ task instead, where it stays open until someone acts on it or declines it.
     brains beliefs                            accepted ones, broadest first
     brains beliefs -role fixer -repo app      exactly what a fixer there is told
     brains beliefs -status proposed           waiting for you
+    brains belief CODE                        one in full: its note, what it replaces, what replaced it
     brains believe "..." [-role R] [-repo REPO] [-replaces CODE] -note "..."
     brains accept CODE...     brains reject CODE...     brains retire CODE...
 

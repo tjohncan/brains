@@ -21,9 +21,8 @@ const version = "0.1.0"
 type mcpServer struct {
 	st       *store
 	session  *sessionInfo
-	bound    bool // the session was known before the first call, so register isn't offered
 	fresh    bool // the session's role works with fresh eyes
-	rejoined bool // bound by recognizing the conversation, not by brains fresh
+	rejoined bool // found by recognizing the conversation, not named by brains fresh
 }
 
 // conversationID is Claude Code's ID for the conversation a server is running
@@ -203,7 +202,7 @@ func (t mcpTool) definition() map[string]any {
 func (m *mcpServer) tools() []mcpTool {
 	var out []mcpTool
 	for _, t := range mcpTools {
-		if t.name == "register" && m.bound {
+		if t.name == "register" && m.session != nil {
 			continue
 		}
 		if t.fresh || !m.fresh {
@@ -337,7 +336,7 @@ func (m *mcpServer) register(a map[string]string) (string, error) {
 		lead += " If this session restarts, register with resume: %[3]s to continue as it."
 	}
 	if a["resume"] != "" {
-		sess, err = m.st.resume(a["resume"])
+		sess, err = m.st.resume(a["resume"], conversationID())
 		lead = "Resumed as %[1]s: %[2]s."
 	} else {
 		// One conversation is one session: registering again would start a
@@ -457,7 +456,7 @@ func (m *mcpServer) call(name string, args map[string]any) (string, error) {
 	}
 	if tool == nil {
 		switch {
-		case name == "register" && m.bound:
+		case name == "register" && m.session != nil:
 			return "", fmt.Errorf("brains already knows this session as %s; there's nothing to register", m.session.called())
 		case m.fresh:
 			return "", fmt.Errorf("%s isn't available with fresh eyes", name)
@@ -560,7 +559,7 @@ func serveMCP(st *store, session string, in io.Reader, out io.Writer) error {
 		if err != nil {
 			return err
 		}
-		m.session, m.bound, m.fresh = sess, true, sess.freshEyes
+		m.session, m.fresh = sess, sess.freshEyes
 	} else if id := conversationID(); id != "" {
 		sess, sid, err := sessionByConversation(st.db, id)
 		if err != nil {
@@ -570,7 +569,7 @@ func serveMCP(st *store, session string, in io.Reader, out io.Writer) error {
 			if err := logAction(st.db, sess, "session.resume", sid, "recognized by its conversation"); err != nil {
 				return err
 			}
-			m.session, m.bound, m.fresh, m.rejoined = sess, true, sess.freshEyes, true
+			m.session, m.fresh, m.rejoined = sess, sess.freshEyes, true
 		}
 	}
 	sc := bufio.NewScanner(in)

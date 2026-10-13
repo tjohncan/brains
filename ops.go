@@ -313,13 +313,34 @@ func sessionByConversation(ex execer, externalID string) (*sessionInfo, []byte, 
 	return findSession(ex, code)
 }
 
-// resume continues as a session registered earlier, after a restart.
-func (s *store) resume(code string) (*sessionInfo, error) {
-	sess, id, err := findSession(s.db, code)
+// resume continues as a session registered earlier, after a restart, in the
+// conversation it belongs to. A session with no conversation recorded takes
+// this one, so the next restart recognizes it by itself.
+func (s *store) resume(code, conversation string) (*sessionInfo, error) {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	return sess, logAction(s.db, sess, "session.resume", id, "resumed after a restart")
+	defer tx.Rollback()
+	sess, id, err := findSession(tx, code)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case conversation == "" || sess.externalID == conversation:
+	case sess.externalID != "":
+		return nil, fmt.Errorf("%s belongs to another conversation; register as a new session instead", sess.called())
+	default:
+		if _, err := tx.Exec("update session set external_id = ?, updated_at = datetime('now') where pin = ?",
+			conversation, sess.pin); err != nil {
+			return nil, err
+		}
+		sess.externalID = conversation
+	}
+	if err := logAction(tx, sess, "session.resume", id, "resumed after a restart"); err != nil {
+		return nil, err
+	}
+	return sess, tx.Commit()
 }
 
 // latestSession is the most recent session in a role on a repo.

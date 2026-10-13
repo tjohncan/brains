@@ -122,7 +122,10 @@ restarting mid-conversation and a conversation reopened with plain `claude --res
 instead of `brains resume`, since a resumed conversation keeps its ID. A session that registers
 itself records its conversation too, which is also what lets `brains resume` reopen it. One
 conversation is one session: registering a conversation brains already knows is refused, naming
-it, rather than starting a second record for work that's already someone's.
+it, rather than starting a second record for work that's already someone's. Likewise a server
+serves one session, so once it has one, register isn't offered again. Resuming by code reaches
+only a session of this conversation, or one with no conversation recorded, which then takes this
+one.
 
 **Old work leaves view; nothing is deleted.** A task stays in view while it's open, while it stands
 as a decision (accepted as designed, proven false, deferred), and for 30 days after it closes
@@ -174,11 +177,11 @@ brains tools, because brains is registered with Claude Code at user scope.
     brains tasks | task | file | close | sessions          work with tasks as you
 
 MCP tools, full mode: register, file, withdraw, inbox, mine, show, claim, release, close, list,
-propose. A session brains already knows, because `brains fresh` registered it or because brains
-recognized its conversation, isn't offered register. Fresh eyes: file, withdraw, mine, show.
-Commands and tools take a code by its ending (the four characters agents cite) when nothing else
-in view ends that way, and name the candidates when something does. A repo can be given by its
-name alone once brains knows it, unless two owners have one by that name.
+propose. A session brains already knows, because it registered, because `brains fresh` registered
+it, or because brains recognized its conversation, isn't offered register. Fresh eyes: file,
+withdraw, mine, show. Commands and tools take a code by its ending (the four characters agents
+cite) when nothing else in view ends that way, and name the candidates when something does. A
+repo can be given by its name alone once brains knows it, unless two owners have one by that name.
 
 Lists show an open task that carries a note as "open, noted": in the audit loop, that means the
 fixer confirmed it and put it down with a sketch of the fix.

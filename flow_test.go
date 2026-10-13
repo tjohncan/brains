@@ -160,15 +160,34 @@ func TestAuditLoop(t *testing.T) {
 func TestResumeKeepsTheSession(t *testing.T) {
 	st := newStore(t)
 	fixer := mustRegister(t, st, "fixer")
-	again, err := st.resume(fixer.code)
+	again, err := st.resume(fixer.code, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if again.pin != fixer.pin || again.role != "fixer" {
 		t.Errorf("resumed as %+v, want %+v", again, fixer)
 	}
-	if _, err := st.resume("20260101-nobody-xxxx"); err == nil {
+	if _, err := st.resume("20260101-nobody-xxxx", ""); err == nil {
 		t.Error("resuming an unknown session succeeded")
+	}
+
+	// A session belongs to its conversation; one with none recorded takes the
+	// conversation that resumes it.
+	other, err := st.register(registration{role: "fixer", repo: "owner/app", externalID: "conversation-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.resume(other.code, "conversation-b"); err == nil || !strings.Contains(err.Error(), "another conversation") {
+		t.Errorf("resume from another conversation: err = %v, want refused", err)
+	}
+	if _, err := st.resume(other.code, "conversation-a"); err != nil {
+		t.Errorf("resume in its own conversation: %v", err)
+	}
+	if again, err := st.resume(fixer.code, "conversation-c"); err != nil || again.externalID != "conversation-c" {
+		t.Errorf("resume of a session with no conversation = %+v, %v; want conversation-c recorded", again, err)
+	}
+	if sess, _, err := sessionByConversation(st.db, "conversation-c"); err != nil || sess == nil || sess.pin != fixer.pin {
+		t.Errorf("sessionByConversation(conversation-c) = %+v, %v; want %s", sess, err, fixer.code)
 	}
 }
 
@@ -338,6 +357,12 @@ func TestRegisteringIntoFreshEyes(t *testing.T) {
 		if text, isErr := toolText(t, r[id]); !isErr || !strings.Contains(text, "fresh eyes") {
 			t.Errorf("reply %s = %q, %v; want refused for fresh eyes", id, text, isErr)
 		}
+	}
+	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "already knows this session") {
+		t.Errorf("a second register = %q, %v; want refused: one server serves one session", text, isErr)
+	}
+	if n := one(t, st.db, "select count(*) from session"); n != "1" {
+		t.Errorf("%s sessions recorded, want 1", n)
 	}
 }
 
@@ -750,7 +775,7 @@ func TestRegisteringRecordsTheConversation(t *testing.T) {
 	if err != nil || sess == nil {
 		t.Fatalf("sessionByConversation = %v, %v; want the session it just registered", sess, err)
 	}
-	if text, isErr := toolText(t, r["2"]); !isErr || !strings.Contains(text, "already knows this conversation") {
+	if text, isErr := toolText(t, r["2"]); !isErr || !strings.Contains(text, "already knows this") {
 		t.Errorf("a second register = %q, %v; want refused, naming the session", text, isErr)
 	}
 	if again, _, err := findSession(st.db, sess.nickname); err != nil || again.externalID != conversation {

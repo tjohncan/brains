@@ -23,6 +23,8 @@ type mcpServer struct {
 	session  *sessionInfo
 	fresh    bool // the session's role works with fresh eyes
 	rejoined bool // found by recognizing the conversation, not named by brains fresh
+
+	toolsChanged bool // the tool list changed; tell the client after this reply
 }
 
 // conversationID is Claude Code's ID for the conversation a server is running
@@ -357,6 +359,7 @@ func (m *mcpServer) register(a map[string]string) (string, error) {
 	// taken, stay for as long as this server runs.
 	becameFresh := sess.freshEyes && !m.fresh
 	m.session, m.fresh = sess, m.fresh || sess.freshEyes
+	m.toolsChanged = true // register is gone, and with fresh eyes, most of the rest
 	return m.brief(lead, becameFresh)
 }
 
@@ -517,7 +520,7 @@ func (m *mcpServer) handle(req rpcRequest) (any, *rpcError) {
 		}
 		return map[string]any{
 			"protocolVersion": p.ProtocolVersion,
-			"capabilities":    map[string]any{"tools": map[string]any{}},
+			"capabilities":    map[string]any{"tools": map[string]any{"listChanged": true}},
 			"serverInfo":      map[string]any{"name": "brains", "version": version},
 			"instructions":    text,
 		}, nil
@@ -595,6 +598,12 @@ func serveMCP(st *store, session string, in io.Reader, out io.Writer) error {
 		resp.Result, resp.Error = m.handle(req)
 		if err := enc.Encode(resp); err != nil {
 			return err
+		}
+		if m.toolsChanged {
+			m.toolsChanged = false
+			if err := enc.Encode(map[string]string{"jsonrpc": "2.0", "method": "notifications/tools/list_changed"}); err != nil {
+				return err
+			}
 		}
 	}
 	return sc.Err()

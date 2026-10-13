@@ -349,7 +349,14 @@ func TestRegisteringIntoFreshEyes(t *testing.T) {
 		toolCall(2, "inbox", map[string]string{"purpose": "peek"}),
 		toolCall(3, "register", map[string]string{"role": "fixer", "repo": "o/r"}),
 		toolCall(4, "list", map[string]string{"purpose": "peek again"}),
+		`{"jsonrpc":"2.0","id":5,"method":"tools/list"}`,
 	)
+	if note := r["<nil>"]; note == nil || note["method"] != "notifications/tools/list_changed" {
+		t.Errorf("after register, notification = %v; want tools/list_changed", note)
+	}
+	if got, want := toolNames(t, r["5"]), []string{"file", "withdraw", "mine", "show"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("tools after registering into fresh eyes = %v, want %v", got, want)
+	}
 	if text, _ := toolText(t, r["1"]); !strings.Contains(text, "fresh eyes") {
 		t.Errorf("register = %q, want it told about fresh eyes", text)
 	}

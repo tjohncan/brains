@@ -998,6 +998,27 @@ func TestLatestSession(t *testing.T) {
 	}
 }
 
+// TestUnstartedSessionsAreForgotten: a session whose server never started is
+// deleted after claude exits; one whose server started is kept.
+func TestUnstartedSessionsAreForgotten(t *testing.T) {
+	st := newStore(t)
+	never := mustRegister(t, st, "fixer")
+	if forgot, err := st.forgetUnstarted(never); err != nil || !forgot {
+		t.Errorf("forgetUnstarted(never started) = %v, %v; want forgotten", forgot, err)
+	}
+	if n := one(t, st.db, "select count(*) from session where pin = ?", never.pin); n != "0" {
+		t.Error("a session that never started is still recorded")
+	}
+	started := mustRegister(t, st, "fixer")
+	mcpExchange(t, st, started.code, initializeRequest)
+	if forgot, err := st.forgetUnstarted(started); err != nil || forgot {
+		t.Errorf("forgetUnstarted(started) = %v, %v; want kept", forgot, err)
+	}
+	if started.nickname != "fixer1" {
+		t.Errorf("the next fixer is %s; want fixer1, freed by the forgotten one", started.nickname)
+	}
+}
+
 // TestNicknames: a session is called for its role and the lowest number no
 // session in view has, unless it's given a name; a name a role or a session
 // in view has is refused; and a number comes free once its session leaves

@@ -181,7 +181,18 @@ func runFresh(args []string) error {
 	if added {
 		fmt.Println("added repo", repoName(args[1]))
 	}
-	return runClaude(claude, sess, append([]string{"--session-id", conversation}, args[2:]...))
+	err = runClaude(claude, sess, append([]string{"--session-id", conversation}, args[2:]...))
+	// claude failing before the session's server started, as on a mistyped
+	// flag, means the session never began.
+	if err != nil {
+		if st, openErr := openStore(); openErr == nil {
+			if forgot, _ := st.forgetUnstarted(sess); forgot {
+				fmt.Fprintln(os.Stderr, "claude didn't start "+sess.called()+", so brains forgot it")
+			}
+			st.db.Close()
+		}
+	}
+	return err
 }
 
 // runResume continues, in Claude Code, a session whose conversation brains

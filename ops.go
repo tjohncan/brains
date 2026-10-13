@@ -293,6 +293,30 @@ func (s *store) register(r registration) (*sessionInfo, error) {
 	return sess, tx.Commit()
 }
 
+// forgetUnstarted deletes a session brains fresh registered whose server
+// never started, as when claude refused its arguments. Nothing happened in
+// it, and left in place it would hold its nickname and be what brains resume
+// finds. History keeps the row.
+func (s *store) forgetUnstarted(sess *sessionInfo) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow("select count(*) from action where session_pin = ? and operation <> 'session.register'",
+		sess.pin).Scan(&n); err != nil || n > 0 {
+		return false, err
+	}
+	for _, del := range []string{"delete from session_repo where session_pin = ?",
+		"delete from session_initiative where session_pin = ?", "delete from session where pin = ?"} {
+		if _, err := tx.Exec(del, sess.pin); err != nil {
+			return false, err
+		}
+	}
+	return true, tx.Commit()
+}
+
 // findSession looks a session up by its nickname or its code, or by an
 // ending only it has, among the sessions in view; a full code reaches any.
 // Should an old session come back into view under a nickname a newer one

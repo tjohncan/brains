@@ -586,8 +586,13 @@ func (m *mcpServer) handle(req rpcRequest) (any, *rpcError) {
 func serveMCP(st *store, session string, in io.Reader, out io.Writer) error {
 	m := &mcpServer{st: st}
 	if session != "" {
-		sess, _, err := findSession(st.db, session)
+		sess, sid, err := findSession(st.db, session)
 		if err != nil {
+			return err
+		}
+		// Recorded so brains fresh can tell a session that started from one
+		// whose claude never got this far.
+		if err := logAction(st.db, sess, "session.start", sid, "server started"); err != nil {
 			return err
 		}
 		m.session, m.fresh = sess, sess.freshEyes

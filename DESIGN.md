@@ -81,10 +81,12 @@ Knowing the session up front is what lets brains brief it. MCP instructions sit 
 prompt, so unlike a tool reply they survive compaction. They name the session, say what its role
 is for, and list every accepted belief that reaches it, as of when the server started. brains also
 picks the conversation's ID (`--session-id`), so `session.external_id` ties the record to its
-transcript. A plain `claude` session still gets brains at user scope and registers itself. Until
-it does, it's told only the beliefs for every role on every repo; the register reply gives it the
-rest. A tool reply doesn't outlast compaction the way instructions do, so the brief tool repeats
-the whole briefing on demand, as brains has it then.
+transcript. If claude fails before the session's server starts, as on a mistyped flag, brains
+forgets the session, so it doesn't hold a nickname or become what `brains resume` finds. A plain
+`claude` session still gets brains at user scope and registers itself. Until it does, it's told
+only the beliefs for every role on every repo; the register reply gives it the rest. A tool reply
+doesn't outlast compaction the way instructions do, so the brief tool repeats the whole briefing
+on demand, as brains has it then.
 
 **Sessions have nicknames.** A code is for records; a nickname is for people. Each session gets one
 when it registers: the name given with `brains fresh -as NAME`, or its role and the lowest number

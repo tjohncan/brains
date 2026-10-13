@@ -62,6 +62,9 @@ func (s *store) defineRole(name, description string, freshEyes *bool) (created b
 		if description == "" {
 			return false, errors.New("a new role needs a description: what it's for, as its sessions should hear it")
 		}
+		if n := 0; tx.QueryRow("select count(*) from session where nickname = ? and "+sessionInView, name).Scan(&n) == nil && n > 0 {
+			return false, fmt.Errorf("role %q: a session in view has that nickname", name)
+		}
 		id, created = newUUID(), true
 		if _, err := tx.Exec("insert into role (id, code_name, description, is_fresh_eyes) values (?, ?, ?, coalesce(?, 0))",
 			id, name, description, fresh); err != nil {

@@ -1028,6 +1028,9 @@ func TestNicknames(t *testing.T) {
 	if _, err := st.file(named, fileInput{typ: "handoff", title: "For fixer1", toSession: "fixer1"}); err != nil {
 		t.Errorf("a handoff to a session by nickname: %v", err)
 	}
+	if _, err := st.defineRole("hm", "A lens that earned a role.", nil); err == nil {
+		t.Error("defined a role named like a session in view")
+	}
 
 	mustExec(t, st.db, "update session set started_at = datetime('now', '-40 days') where pin = ?", first.pin)
 	mustExec(t, st.db, "update action set acted_at = datetime('now', '-40 days') where session_pin = ?", first.pin)

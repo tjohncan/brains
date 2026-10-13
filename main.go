@@ -286,7 +286,8 @@ func runInstall() error {
 	}
 	if a, err := os.Stat(self); err == nil {
 		if b, err := os.Stat(target); err == nil && os.SameFile(a, b) {
-			return errors.New("this is already the installed copy; run install from a new build")
+			return errors.New("this is already the installed copy; to install a new build, run that build: " +
+				"./brains install where you built it, or go run . install from the repo")
 		}
 	}
 	if err := os.MkdirAll(dir, 0o700); err != nil {

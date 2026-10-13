@@ -381,6 +381,7 @@ func (m *mcpServer) briefAgain(map[string]string) (string, error) {
 }
 
 func (m *mcpServer) propose(a map[string]string) (string, error) {
+	added := a["repo"] != "" && newRepo(m.st.db, a["repo"])
 	code, err := m.st.believe(m.session, a["statement"], a["role"], a["repo"], a["note"], a["replaces"])
 	if err != nil {
 		return "", err
@@ -389,10 +390,11 @@ func (m *mcpServer) propose(a map[string]string) (string, error) {
 	if a["replaces"] != "" {
 		reply += " Accepting it retires the belief it replaces."
 	}
-	return reply, nil
+	return reply + addedRepo(added, a["repo"]), nil
 }
 
 func (m *mcpServer) fileTask(a map[string]string) (string, error) {
+	added := a["repo"] != "" && newRepo(m.st.db, a["repo"])
 	code, err := m.st.file(m.session, fileInput{typ: a["type"], title: a["title"], body: a["body"],
 		severity: a["severity"], toRole: a["to_role"], repo: a["repo"], toSession: a["to_session"],
 		replaces: a["replaces"]})
@@ -403,7 +405,16 @@ func (m *mcpServer) fileTask(a map[string]string) (string, error) {
 	if a["replaces"] != "" {
 		reply += " The task it replaces is closed, so this one is the open one."
 	}
-	return reply, nil
+	return reply + addedRepo(added, a["repo"]), nil
+}
+
+// addedRepo tells a session it named a repo brains hadn't seen, which is
+// worth a second look in case it's misspelled.
+func addedRepo(added bool, repo string) string {
+	if !added {
+		return ""
+	}
+	return " brains hadn't seen " + repoName(repo) + " before, so it's added."
 }
 
 func (m *mcpServer) withdraw(a map[string]string) (string, error) {

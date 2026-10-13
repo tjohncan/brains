@@ -168,10 +168,14 @@ func runFresh(args []string) error {
 		return err
 	}
 	conversation := uuidString(newUUID())
+	added := newRepo(st.db, args[1])
 	sess, err := st.register(registration{role: args[0], repo: args[1], nickname: *as, externalID: conversation})
 	st.db.Close()
 	if err != nil {
 		return err
+	}
+	if added {
+		fmt.Println("added repo", repoName(args[1]))
 	}
 	return runClaude(claude, sess, append([]string{"--session-id", conversation}, args[2:]...))
 }
@@ -402,11 +406,15 @@ func runBeliefCommand(cmd string, args []string) error {
 		if err := flags.Parse(args); err != nil {
 			return err
 		}
+		added := *repo != "" && newRepo(st.db, *repo)
 		code, err := st.believe(nil, statement, *role, *repo, *note, *replaces)
 		if err != nil {
 			return err
 		}
 		fmt.Println("added", code)
+		if added {
+			fmt.Println("added repo", repoName(*repo))
+		}
 		if *replaces != "" {
 			fmt.Println("retired what it replaces")
 		}
@@ -487,11 +495,15 @@ func runTaskCommand(cmd string, args []string) error {
 			}
 			in.body = string(b)
 		}
+		added := in.repo != "" && newRepo(st.db, in.repo)
 		filed, err := st.file(nil, in)
 		if err != nil {
 			return err
 		}
 		fmt.Println("filed", filed)
+		if added {
+			fmt.Println("added repo", repoName(in.repo))
+		}
 	case "close":
 		outcome := flags.String("outcome", "", strings.Join(outcomes, ", "))
 		dupOf := flags.String("dup-of", "", "for -outcome duplicate: the task it repeats")

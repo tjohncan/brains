@@ -140,12 +140,9 @@ func logAction(ex execer, sess *sessionInfo, op string, target []byte, purpose s
 // findRepo looks a repo up by owner/name, or by its name alone when only one
 // owner's repo has it, in any case. A repo brains hasn't seen is pin 0.
 func findRepo(ex execer, ref string) (pin int64, err error) {
-	owner, name, full := strings.Cut(strings.TrimSpace(ref), "/")
-	if !full {
-		owner, name = "", owner
-	}
-	if name == "" || (full && owner == "") || strings.Contains(name, "/") {
-		return 0, fmt.Errorf("repo %q: want owner/name", ref)
+	owner, name, err := splitRepo(ref)
+	if err != nil {
+		return 0, err
 	}
 	var n int
 	var all string
@@ -156,6 +153,32 @@ func findRepo(ex execer, ref string) (pin int64, err error) {
 		return 0, fmt.Errorf("repo %q could be %s; give owner/name", ref, all)
 	}
 	return pin, err
+}
+
+// splitRepo reads owner/name, or a name alone, with the owner empty.
+func splitRepo(ref string) (owner, name string, err error) {
+	owner, name, full := strings.Cut(ref, "/")
+	if !full {
+		owner, name = "", owner
+	}
+	owner, name = strings.TrimSpace(owner), strings.TrimSpace(name)
+	if name == "" || (full && owner == "") || strings.ContainsAny(owner+name, "/ \t") {
+		return "", "", fmt.Errorf("repo %q: want owner/name", strings.TrimSpace(ref))
+	}
+	return owner, name, nil
+}
+
+// newRepo says whether naming ref would add a repo brains hasn't seen, so a
+// command can say so and a misspelling shows.
+func newRepo(ex execer, ref string) bool {
+	pin, err := findRepo(ex, ref)
+	return err == nil && pin == 0
+}
+
+// repoName is how brains writes a repo it was given: owner/name, trimmed.
+func repoName(ref string) string {
+	owner, name, _ := splitRepo(ref)
+	return owner + "/" + name
 }
 
 // knownRepo is findRepo for reads, where a repo brains hasn't seen is a mistake.
@@ -173,8 +196,8 @@ func ensureRepo(ex execer, ref string) (int64, error) {
 	if err != nil || pin != 0 {
 		return pin, err
 	}
-	owner, name, full := strings.Cut(strings.TrimSpace(ref), "/")
-	if !full {
+	owner, name, _ := splitRepo(ref)
+	if owner == "" {
 		return 0, fmt.Errorf("repo %q is new to brains, so give it as owner/name", strings.TrimSpace(ref))
 	}
 	res, err := ex.Exec("insert into repo (id, owner, name) values (?, ?, ?)", newUUID(), owner, name)

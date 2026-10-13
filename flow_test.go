@@ -961,6 +961,15 @@ func TestReposByName(t *testing.T) {
 	if _, err := ensureRepo(st.db, "app"); err == nil || !strings.Contains(err.Error(), "someone/app") {
 		t.Errorf("a name two owners share: err = %v, want both named", err)
 	}
+	if pin, err := ensureRepo(st.db, " owner / app "); err != nil || pin != auth {
+		t.Errorf("ensureRepo(%q) = %d, %v; want %d", " owner / app ", pin, err, auth)
+	}
+	if _, err := ensureRepo(st.db, "own er/app"); err == nil {
+		t.Error("added a repo with a space inside its owner")
+	}
+	if !newRepo(st.db, "owner/ap") || newRepo(st.db, "owner/app") {
+		t.Error("newRepo can't tell a repo brains has seen from one it hasn't")
+	}
 	if _, err := st.list(nil, "", "all", "nobody/nothing", "", false); err == nil {
 		t.Error("listed tasks for a repo brains has never seen")
 	}

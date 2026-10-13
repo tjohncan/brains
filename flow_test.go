@@ -297,6 +297,10 @@ func TestMCPFreshEyes(t *testing.T) {
 	if !ok || hello["protocolVersion"] != "2025-06-18" {
 		t.Fatalf("initialize = %v, want protocolVersion 2025-06-18 echoed", r["1"])
 	}
+	unknown := mcpExchange(t, st, auditor.code, strings.Replace(initializeRequest, "2025-06-18", "1999-01-01", 1))
+	if got := unknown["1"]["result"].(map[string]any)["protocolVersion"]; got != protocolVersions[len(protocolVersions)-1] {
+		t.Errorf("initialize asking for 1999-01-01 = %v, want the newest version brains is written to", got)
+	}
 	told, _ := hello["instructions"].(string)
 	for _, want := range []string{auditor.code + " (auditor1): auditor on owner/app", "You read the repo cold", "fresh eyes", "- Never push"} {
 		if !strings.Contains(told, want) {

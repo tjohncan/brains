@@ -14,6 +14,10 @@ import (
 
 const version = "0.1.0"
 
+// protocolVersions are the MCP revisions this server is written to, oldest
+// first. A client asking for another gets the newest, and decides from there.
+var protocolVersions = []string{"2024-11-05", "2025-03-26", "2025-06-18", "2025-11-25"}
+
 // mcpServer speaks MCP over stdio: newline-delimited JSON-RPC, tools only.
 // Claude Code starts one per session. brains fresh tells it the session up
 // front; otherwise the session registers, and the server remembers who it's
@@ -539,8 +543,8 @@ func (m *mcpServer) handle(req rpcRequest) (any, *rpcError) {
 			ProtocolVersion string `json:"protocolVersion"`
 		}
 		json.Unmarshal(req.Params, &p)
-		if p.ProtocolVersion == "" {
-			p.ProtocolVersion = "2025-06-18"
+		if !slices.Contains(protocolVersions, p.ProtocolVersion) {
+			p.ProtocolVersion = protocolVersions[len(protocolVersions)-1]
 		}
 		text, err := m.instructions()
 		if err != nil {

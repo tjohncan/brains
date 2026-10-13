@@ -456,9 +456,10 @@ select t.code_name, tt.code_name, t.status, coalesce(t.severity, ''), coalesce(t
   left join task d on d.pin = t.duplicate_of_task_pin
  where `
 
-// Most severe first, then oldest first.
+// Handoffs first, since a session starts from one, then most severe first,
+// then oldest first.
 const taskOrder = `
- order by case t.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2
+ order by tt.code_name <> 'handoff', case t.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2
           when 'low' then 3 when 'info' then 4 else 5 end, t.pin`
 
 func (s *store) queryTasks(where string, args ...any) ([]taskRow, error) {

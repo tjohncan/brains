@@ -711,6 +711,10 @@ func TestReplacingAHandoff(t *testing.T) {
 	if len(rows) != 1 || rows[0].code != second {
 		t.Errorf("the next fixer's inbox = %v, want only %s", rows, second)
 	}
+	urgent := mustFile(t, st, nil, fileInput{title: "Urgent", body: "b", severity: "critical", toRole: "fixer", repo: "owner/app"})
+	if rows, err := st.inbox(next, "check the handoff"); err != nil || len(rows) != 2 || rows[0].code != second {
+		t.Errorf("inbox = %v, %v; want the handoff before %s", rows, err, urgent)
+	}
 	if _, err := st.file(next, handoff("Round three", first)); err == nil {
 		t.Error("replaced a handoff that was already closed")
 	}

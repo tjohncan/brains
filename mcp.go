@@ -330,7 +330,12 @@ func joinParagraphs(parts ...string) string {
 func (m *mcpServer) register(a map[string]string) (string, error) {
 	var sess *sessionInfo
 	var err error
-	lead := "Registered as %[1]s: %[2]s. If this session restarts, register with resume: %[3]s to continue as it."
+	lead := "Registered as %[1]s: %[2]s."
+	if conversationID() == "" {
+		// Without the conversation's ID, a restarted server can't recognize
+		// this session, so the session has to say which one it is.
+		lead += " If this session restarts, register with resume: %[3]s to continue as it."
+	}
 	if a["resume"] != "" {
 		sess, err = m.st.resume(a["resume"])
 		lead = "Resumed as %[1]s: %[2]s."
@@ -453,7 +458,7 @@ func (m *mcpServer) call(name string, args map[string]any) (string, error) {
 	if tool == nil {
 		switch {
 		case name == "register" && m.bound:
-			return "", fmt.Errorf("brains registered this session as %s when it started; there's nothing to register", m.session.code)
+			return "", fmt.Errorf("brains already knows this session as %s; there's nothing to register", m.session.called())
 		case m.fresh:
 			return "", fmt.Errorf("%s isn't available with fresh eyes", name)
 		}

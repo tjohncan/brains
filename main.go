@@ -26,7 +26,7 @@ sessions:
   fresh ROLE REPO        register a session in that role on that repo, then start Claude Code
                          here as it; anything after the repo goes to claude, a prompt included.
                          It's nicknamed for its role, as in auditor1, unless -as NAME comes first
-  resume NAME            continue a session brains fresh started, by its nickname or its code;
+  resume NAME            continue a session, by its nickname or its code;
                          resume ROLE REPO continues the latest one in that role on that repo
   sessions               list sessions in view: -old lists every one
 
@@ -176,8 +176,8 @@ func runFresh(args []string) error {
 	return runClaude(claude, sess, append([]string{"--session-id", conversation}, args[2:]...))
 }
 
-// runResume continues, in Claude Code, a session brains fresh started: one
-// named by its nickname or code, or the latest in a role on a repo.
+// runResume continues, in Claude Code, a session whose conversation brains
+// knows: one named by its nickname or code, or the latest in a role on a repo.
 func runResume(args []string) error {
 	first, args, err := firstArg("resume", "a session's nickname or code, or a role and a repo,", args)
 	if err != nil {
@@ -202,7 +202,7 @@ func runResume(args []string) error {
 		sess, id, err = findSession(st.db, first)
 	}
 	if err == nil && sess.externalID == "" {
-		err = fmt.Errorf("%s registered itself instead of starting from brains fresh, so brains doesn't know which conversation to resume", sess.code)
+		err = fmt.Errorf("brains has no conversation recorded for %s, so there's nothing to reopen", sess.code)
 	}
 	if err == nil {
 		err = logAction(st.db, sess, "session.resume", id, "resumed by brains resume")

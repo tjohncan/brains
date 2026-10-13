@@ -258,7 +258,7 @@ func TestMCPFreshEyes(t *testing.T) {
 	if got, want := toolNames(t, r["2"]), []string{"file", "withdraw", "mine", "show"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("fresh tools = %v, want %v", got, want)
 	}
-	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "registered this session as "+auditor.code) {
+	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "already knows this session as "+auditor.code) {
 		t.Errorf("register = %q, %v; want refused, naming the session", text, isErr)
 	}
 	if text, isErr := toolText(t, r["4"]); !isErr || !strings.Contains(text, "fresh eyes") {
@@ -305,8 +305,9 @@ func TestMCPFullMode(t *testing.T) {
 	}
 	text, isErr := toolText(t, r["5"])
 	if isErr || !strings.Contains(text, ": fixer on o/r.") || !strings.Contains(text, "You fix what's filed") ||
-		!strings.Contains(text, "- No diary comments.") {
-		t.Errorf("register = %q, %v; want the role, lowercased, what it's for, and its beliefs", text, isErr)
+		!strings.Contains(text, "- No diary comments.") || !strings.Contains(text, "register with resume") {
+		t.Errorf("register = %q, %v; want the role, lowercased, what it's for, its beliefs, and how to resume "+
+			"after a restart, since there's no conversation to recognize", text, isErr)
 	}
 	if text, isErr := toolText(t, r["6"]); !isErr || !strings.Contains(text, "purpose is required") {
 		t.Errorf("inbox without purpose = %q, %v; want refused", text, isErr)
@@ -738,8 +739,12 @@ func TestRegisteringRecordsTheConversation(t *testing.T) {
 		toolCall(1, "register", map[string]string{"role": "fixer", "repo": "owner/app"}),
 		toolCall(2, "register", map[string]string{"role": "auditor", "repo": "owner/app"}),
 	)
-	if text, isErr := toolText(t, r["1"]); isErr {
+	text, isErr := toolText(t, r["1"])
+	if isErr {
 		t.Fatalf("register = %q, %v", text, isErr)
+	}
+	if strings.Contains(text, "register with resume") {
+		t.Errorf("register = %q; want no resume advice, since a restarted server recognizes the conversation", text)
 	}
 	sess, _, err := sessionByConversation(st.db, conversation)
 	if err != nil || sess == nil {

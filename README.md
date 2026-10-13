@@ -109,8 +109,27 @@ For tab completion in bash, add this line to `~/.bashrc`, as `install` reminds y
 
     complete -C brains brains
 
-It completes commands, flags, roles, repos, nicknames, and the endings of task and belief codes.
-Command Prompt has no way for a program to complete its own arguments.
+It completes commands, flags, roles, repos, nicknames, and the endings of task and belief codes,
+in Git Bash and in bash on Linux and macOS. In zsh, the default on macOS, load bash-style
+completion first, in `~/.zshrc` (leave out compinit if your setup already runs it):
+
+    autoload -U +X compinit && compinit
+    autoload -U +X bashcompinit && bashcompinit
+    complete -C brains brains
+
+WSL takes three more steps to run the Windows build. WSL runs a Windows program only by its full
+name, passes it only the environment variables named in `WSLENV`, and hands it what you type
+while it runs. So link `brains` to the installed build from a folder on your WSL path:
+
+    ln -s /mnt/c/Users/<you>/AppData/Local/brains/brains.exe ~/.local/bin/brains
+
+and in WSL's `~/.bashrc`, use these lines in place of the one above:
+
+    export WSLENV="${WSLENV:+$WSLENV:}COMP_LINE:COMP_POINT"
+    complete -C 'brains </dev/null' brains
+
+The link follows each install and uses the same database as Windows; a Linux build would keep a
+database of its own. Command Prompt has no way for a program to complete its own arguments.
 
 Next, define a role for each kind of session you run, with a description written to its
 sessions:

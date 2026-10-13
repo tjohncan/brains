@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -223,8 +225,14 @@ func TestResumeKeepsTheSession(t *testing.T) {
 // mcpExchange feeds requests to the MCP server and returns its replies by id.
 func mcpExchange(t *testing.T, st *store, session string, requests ...string) map[string]map[string]any {
 	t.Helper()
+	return mcpExchangeIn(t, st, session, "", requests...)
+}
+
+// mcpExchangeIn is mcpExchange for a session that started in dir.
+func mcpExchangeIn(t *testing.T, st *store, session, dir string, requests ...string) map[string]map[string]any {
+	t.Helper()
 	var out bytes.Buffer
-	if err := serveMCP(st, session, strings.NewReader(strings.Join(requests, "\n")+"\n"), &out); err != nil {
+	if err := serveMCP(st, session, dir, strings.NewReader(strings.Join(requests, "\n")+"\n"), &out); err != nil {
 		t.Fatal(err)
 	}
 	replies := map[string]map[string]any{}
@@ -403,6 +411,42 @@ func TestRegisteringIntoFreshEyes(t *testing.T) {
 	}
 	if n := one(t, st.db, "select count(*) from session"); n != "1" {
 		t.Errorf("%s sessions recorded, want 1", n)
+	}
+}
+
+// TestSessionsAreToldWhereTheirRepoIs: a session starts in the brains folder,
+// so it's told where its repo is cloned under REPOS, or where the clone goes.
+func TestSessionsAreToldWhereTheirRepoIs(t *testing.T) {
+	st := newStore(t)
+	root := t.TempDir()
+	clone := filepath.Join(root, "REPOS", "owner", "app")
+	// A clone of brains has a REPOS folder of its own.
+	if err := os.MkdirAll(filepath.Join(clone, "REPOS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	told := func(sess *sessionInfo, dir string) string {
+		t.Helper()
+		r := mcpExchangeIn(t, st, sess.code, dir, initializeRequest)
+		s, _ := r["1"]["result"].(map[string]any)["instructions"].(string)
+		return s
+	}
+	fixer := mustRegister(t, st, "fixer") // on owner/app
+	if got := told(fixer, root); !strings.Contains(got, "is cloned at "+clone+": work there, not in "+root) {
+		t.Errorf("started in the brains folder, the fixer is told %q", got)
+	}
+	if got := told(fixer, clone); !strings.Contains(got, "is cloned at "+clone+", where this session started") {
+		t.Errorf("started in its clone, the fixer is told %q", got)
+	}
+	other, err := st.register(registration{role: "fixer", repo: "owner/other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	place := filepath.Join(root, "REPOS", "owner", "other")
+	if got := told(other, clone); !strings.Contains(got, "isn't cloned yet") || !strings.Contains(got, place) {
+		t.Errorf("a repo with no clone, the fixer is told %q; want its place, %s", got, place)
+	}
+	if got := told(fixer, ""); strings.Contains(got, "cloned") {
+		t.Errorf("with no folder known, the fixer is told %q; want nothing about clones", got)
 	}
 }
 

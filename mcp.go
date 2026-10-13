@@ -25,8 +25,9 @@ var protocolVersions = []string{"2024-11-05", "2025-03-26", "2025-06-18", "2025-
 type mcpServer struct {
 	st       *store
 	session  *sessionInfo
-	fresh    bool // the session's role works with fresh eyes
-	rejoined bool // found by recognizing the conversation, not named by brains fresh
+	fresh    bool   // the session's role works with fresh eyes
+	rejoined bool   // found by recognizing the conversation, not named by brains fresh
+	dir      string // the folder the session started in, which its repos' clones are found from
 
 	toolsChanged bool // the tool list changed; tell the client after this reply
 }
@@ -326,14 +327,48 @@ func (m *mcpServer) brief(lead string, withUsage bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	clones, err := m.whereToWork()
+	if err != nil {
+		return "", err
+	}
 	usage := ""
 	if withUsage && m.fresh {
 		usage = usageFresh
 	} else if withUsage {
 		usage = usageFull
 	}
-	return joinParagraphs(fmt.Sprintf(lead, m.session.called(), where, m.session.code), roleDescription, usage,
-		beliefSection("sessions like this one", beliefs)), nil
+	return joinParagraphs(fmt.Sprintf(lead, m.session.called(), where, m.session.code), clones, roleDescription,
+		usage, beliefSection("sessions like this one", beliefs)), nil
+}
+
+// whereToWork tells a session where its repo is cloned. A session starts in
+// the brains folder, which holds the clones but isn't one of them, so without
+// this it would look for its repo in the wrong place.
+func (m *mcpServer) whereToWork() (string, error) {
+	if m.dir == "" {
+		return "", nil
+	}
+	repos, err := m.st.sessionRepos(m.session)
+	if err != nil {
+		return "", err
+	}
+	var out []string
+	for _, repo := range repos {
+		owner, name, _ := strings.Cut(repo, "/")
+		path, exists := clonePath(m.dir, owner, name)
+		switch {
+		case path == "":
+		case exists && sameDir(path, m.dir):
+			out = append(out, fmt.Sprintf("Your repo, %s, is cloned at %s, where this session started.", repo, path))
+		case exists:
+			out = append(out, fmt.Sprintf("Your repo, %s, is cloned at %s: work there, not in %s, where this "+
+				"session started.", repo, path, m.dir))
+		default:
+			out = append(out, fmt.Sprintf("Your repo, %s, isn't cloned yet. brains keeps clones in "+
+				"REPOS/<owner>/<repo> under the folder sessions start in, so it goes at %s.", repo, path))
+		}
+	}
+	return strings.Join(out, " "), nil
 }
 
 func joinParagraphs(parts ...string) string {
@@ -586,9 +621,10 @@ func (m *mcpServer) handle(req rpcRequest) (any, *rpcError) {
 // start, as brains fresh arranges. Without one, it serves the session
 // recorded for this conversation, if there is one: that's what picks a
 // session back up when this server restarts mid-conversation, or when Claude
-// Code reopens the conversation without brains resume.
-func serveMCP(st *store, session string, in io.Reader, out io.Writer) error {
-	m := &mcpServer{st: st}
+// Code reopens the conversation without brains resume. dir is the folder the
+// session started in.
+func serveMCP(st *store, session, dir string, in io.Reader, out io.Writer) error {
+	m := &mcpServer{st: st, dir: dir}
 	if session != "" {
 		sess, sid, err := findSession(st.db, session)
 		if err != nil {

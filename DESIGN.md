@@ -151,7 +151,8 @@ again and the fixer closes the repeats as their duplicates; deferred work hasn't
 a session uses and the repos it works on sit under one path. Repos are cloned to
 `REPOS/<owner>/<repo>`, which makes the path derivable from a repository's identifier on any
 machine; any other first-level folder under `REPOS/` is a scratch copy. Nothing inside `REPOS/` is
-tracked.
+tracked. The root holds the clones but isn't one of them, so brains tells each session where its
+repo's clone is, found from the folder the session started in, or where the clone goes.
 
 ## Tables
 
@@ -180,7 +181,7 @@ brains tools, because brains is registered with Claude Code at user scope.
 
     brains init                      create a persona's database from nothing
     brains install                   copy a build to the per-user install path
-    brains mcp [-session CODE]       run as an MCP server over stdio
+    brains mcp [-session CODE] [-dir DIR]      run as an MCP server over stdio
     brains fresh [-as NAME] ROLE REPO      register a session and start Claude Code as it
     brains resume NAME | ROLE REPO         continue a session brains knows the conversation of
     brains roles | role              list roles; show, define, or change one

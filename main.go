@@ -20,7 +20,7 @@ const usage = `usage: brains <command> [arguments]
 setup:
   init                   create this persona's database from nothing
   install                copy this build to the per-user install path
-  mcp                    run as an MCP server over stdio; brains fresh adds -session CODE
+  mcp                    run as an MCP server over stdio; brains fresh adds -session CODE -dir DIR
 
 sessions:
   fresh ROLE REPO        register a session in that role on that repo, then start Claude Code
@@ -148,15 +148,22 @@ func openStore() (*store, error) {
 func runMCP(args []string) error {
 	flags := flag.NewFlagSet("mcp", flag.ContinueOnError)
 	session := flags.String("session", "", "serve this session from the start; brains fresh passes it")
+	dir := flags.String("dir", "", "the folder the session started in; brains fresh passes it, and otherwise it's this one")
 	if err := flags.Parse(args); err != nil {
 		return err
+	}
+	if *dir == "" {
+		*dir, _ = os.Getwd()
+	}
+	if abs, err := filepath.Abs(*dir); err == nil {
+		*dir = abs
 	}
 	st, err := openStore()
 	if err != nil {
 		return err
 	}
 	defer st.db.Close()
-	return serveMCP(st, *session, os.Stdin, os.Stdout)
+	return serveMCP(st, *session, *dir, os.Stdin, os.Stdout)
 }
 
 // runFresh registers a session in a role on a repo, then starts Claude Code
@@ -259,13 +266,17 @@ func runClaude(claude string, sess *sessionInfo, args []string) error {
 			return err
 		}
 	}
+	dir, err := os.Getwd()
+	if err != nil {
+		return err
+	}
 	cfg, err := os.CreateTemp("", "brains-session-*.json")
 	if err != nil {
 		return err
 	}
 	defer os.Remove(cfg.Name())
 	err = json.NewEncoder(cfg).Encode(map[string]any{"mcpServers": map[string]any{
-		"brains": map[string]any{"type": "stdio", "command": server, "args": []string{"mcp", "-session", sess.code}},
+		"brains": map[string]any{"type": "stdio", "command": server, "args": []string{"mcp", "-session", sess.code, "-dir", dir}},
 	}})
 	if closeErr := cfg.Close(); err == nil {
 		err = closeErr

@@ -85,7 +85,8 @@ and needs nothing before it.
 
 A session starts in whatever folder you run `brains fresh` from, so resume it from there too.
 This repo is set up to be that folder: clone the repos sessions work on into
-`REPOS/<owner>/<repo>`, which git ignores (see [REPOS/README.md](REPOS/README.md)).
+`REPOS/<owner>/<repo>`, which git ignores (see [REPOS/README.md](REPOS/README.md)). Each session
+is told where its repo's clone is.
 
 ## Setup
 

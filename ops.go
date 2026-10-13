@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -179,6 +181,50 @@ func newRepo(ex execer, ref string) bool {
 func repoName(ref string) string {
 	owner, name, _ := splitRepo(ref)
 	return owner + "/" + name
+}
+
+// sessionRepos are the repos a session works on, as owner/name.
+func (s *store) sessionRepos(sess *sessionInfo) ([]string, error) {
+	return strings0(s.db, `select p.owner || '/' || p.name from session_repo sr join repo p on p.pin = sr.repo_pin
+		 where sr.session_pin = ? order by p.owner, p.name`, sess.pin)
+}
+
+// clonePath finds a repo's clone by the layout DESIGN.md describes:
+// REPOS/<owner>/<name> in the brains folder, which is the folder a session
+// starts in or one above it. When there's no clone, it's where one would go:
+// under the nearest folder with a REPOS folder that isn't inside REPOS itself,
+// since every brains checkout has a REPOS folder of its own. It's empty when
+// no folder up from start has one.
+func clonePath(start, owner, name string) (path string, exists bool) {
+	var home string
+	for dir := start; ; dir = filepath.Dir(dir) {
+		if p := filepath.Join(dir, "REPOS", owner, name); isDir(p) {
+			return p, true
+		}
+		if home == "" && isDir(filepath.Join(dir, "REPOS")) &&
+			!slices.Contains(strings.Split(filepath.ToSlash(dir), "/"), "REPOS") {
+			home = dir
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
+	if home == "" {
+		return "", false
+	}
+	return filepath.Join(home, "REPOS", owner, name), false
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// sameDir says whether two paths name one folder, however they're spelled.
+func sameDir(a, b string) bool {
+	x, errA := os.Stat(a)
+	y, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(x, y)
 }
 
 // knownRepo is findRepo for reads, where a repo brains hasn't seen is a mistake.

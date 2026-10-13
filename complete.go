@@ -27,7 +27,7 @@ var commands = []string{"accept", "belief", "beliefs", "believe", "close", "file
 // that takes a value. Keep them in step.
 var commandFlags = map[string]map[string]bool{
 	"init":     {"db": true},
-	"mcp":      {"session": true},
+	"mcp":      {"session": true, "dir": true},
 	"fresh":    {"as": true},
 	"sessions": {"old": false},
 	"role":     {"description": true, "fresh-eyes": false},

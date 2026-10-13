@@ -105,6 +105,13 @@ and keep running the copy they started with, so you can rebuild and install agai
 work. `init` creates the database there, `brains.db`; set `BRAINS_DB` to use another file. Each
 user account gets its own folder, so a work account and a personal one keep separate records.
 
+For tab completion in bash, add this line to `~/.bashrc`, as `install` reminds you:
+
+    complete -C brains brains
+
+It completes commands, flags, roles, repos, nicknames, and the endings of task and belief codes.
+Command Prompt has no way for a program to complete its own arguments.
+
 Next, define a role for each kind of session you run, with a description written to its
 sessions:
 
@@ -139,7 +146,8 @@ plain session registers itself once you tell it its role and repo.
 | `roles.go`, `beliefs.go` | roles and beliefs |
 | `store.go` | the database: where it lives, `init`, and the history tables |
 | `schema.sql` | every table, embedded in the binary |
-| `flow_test.go`, `store_test.go` | the tests: `go test` |
+| `complete.go` | tab completion in bash |
+| `flow_test.go`, `store_test.go`, `complete_test.go` | the tests: `go test` |
 
 The SQLite driver, `modernc.org/sqlite`, is the only direct dependency. It's pure Go, so building
 needs no C compiler.

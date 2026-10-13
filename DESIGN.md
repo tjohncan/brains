@@ -195,6 +195,11 @@ characters agents cite) when nothing else in view ends that way, and name the ca
 something does. A repo can be given by its name alone once brains knows it, unless two owners
 have one by that name.
 
+In bash, brains completes its own arguments: `complete -C brains brains` has bash run it
+with the command line in `COMP_LINE`, and it prints the commands, flags, roles, repos, nicknames
+and code endings that fit, reading the database without logging. Command Prompt offers programs
+no such hook.
+
 Lists show an open task that carries a note as "open, noted": in the audit loop, that means the
 fixer confirmed it and put it down with a sketch of the fix.
 

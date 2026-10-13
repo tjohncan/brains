@@ -55,9 +55,18 @@ A REPO is owner/name, or just its name once brains knows it. In view: open tasks
 stand (accepted as designed, proven false, deferred), anything closed in the last 30 days, and
 sessions active in the last 30 days. A CODE can be just its ending, like a9a6, when nothing else
 in view ends that way; a full code reaches anything.
+
+In bash, complete -C brains brains in ~/.bashrc completes commands, names and codes.
 `
 
 func main() {
+	// bash asks brains to complete its own arguments; see complete.go.
+	if line, ok := os.LookupEnv("COMP_LINE"); ok {
+		if point, ok := os.LookupEnv("COMP_POINT"); ok {
+			runComplete(os.Stdout, line, point)
+			return
+		}
+	}
 	if len(os.Args) < 2 {
 		fmt.Fprint(os.Stderr, usage)
 		os.Exit(2)
@@ -307,6 +316,7 @@ func runInstall() error {
 	}
 	fmt.Println("installed", target)
 	fmt.Printf("\nRegister it with Claude Code once, in your user config:\n  claude mcp add --scope user brains -- \"%s\" mcp\n", target)
+	fmt.Println("\nFor tab completion in bash, add this line to ~/.bashrc:\n  complete -C brains brains")
 	return nil
 }
 

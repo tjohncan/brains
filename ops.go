@@ -569,6 +569,9 @@ func (s *store) list(sess *sessionInfo, purpose, status, repo, typ string, old b
 		args = append(args, pin)
 	}
 	if typ = strings.TrimSpace(typ); typ != "" {
+		if !slices.Contains(taskTypes, typ) {
+			return nil, fmt.Errorf("type %q: want one of %s", typ, strings.Join(taskTypes, ", "))
+		}
 		where = append(where, "tt.code_name = ?")
 		args = append(args, typ)
 	}

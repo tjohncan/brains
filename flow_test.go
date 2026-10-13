@@ -461,6 +461,9 @@ func TestImprovementsCloseWithoutAnOutcome(t *testing.T) {
 	if len(rows) != 1 || rows[0].code != idea || rows[0].typ != "improvement" {
 		t.Errorf("list by type = %v, want just %s", rows, idea)
 	}
+	if _, err := st.list(fixer, "findings, by the word in their codes", "all", "", "finding", false); err == nil {
+		t.Error("listed tasks of a type that doesn't exist")
+	}
 	if err := st.close(fixer, idea, "", "", ""); err != nil {
 		t.Errorf("closing an improvement without an outcome: %v", err)
 	}

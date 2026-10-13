@@ -141,9 +141,10 @@ var mcpTools = []mcpTool{
 	{
 		name: "close",
 		desc: "Finish a task. For an audit finding give the outcome: fixed, proven_false, accepted_as_designed, deferred, " +
-			"or duplicate (with duplicate_of set to the task it repeats). Every outcome except duplicate needs a resolution, " +
-			"which the filer will see. Handoffs and improvements can close without an outcome; add a resolution anyway " +
-			"if there's something worth keeping.",
+			"or duplicate (with duplicate_of set to the task it repeats). Every outcome needs a resolution, which the " +
+			"filer will see; for a duplicate, say how the original stands, since a fresh-eyes filer can't open it. " +
+			"Handoffs and improvements can close without an outcome; add a resolution anyway if there's something " +
+			"worth keeping.",
 		props: []prop{
 			taskProp,
 			{"outcome", "How it ended. Required for audit findings.", outcomes},

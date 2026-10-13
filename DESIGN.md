@@ -117,6 +117,13 @@ the chain is for the record, not for reading back through. What replacement does
 loose end carried from handoff to handoff; that belongs in its own improvement task, which stays
 open until someone acts on it.
 
+**Sessions are trusted to follow their instructions.** The tools say how to use them, and brains
+checks what keeps the record readable, not every rule a session is told. A claim marks who is
+working on a task, but it isn't a lock: any session can close a claimed task, so a claim left by a
+session that stopped never blocks the next one, and the owner has nothing to clear. The close tool
+says an audit finding needs an outcome, and sessions give one; the store doesn't check. A state a
+session reaches on purpose, such as withdrawing the only open handoff, is allowed.
+
 **A server recognizes its conversation.** Claude Code passes every MCP server it starts the
 conversation's own ID, and that's what `brains fresh` chose and recorded as `session.external_id`,
 so a server started without being told its session still finds it. That covers a brains server

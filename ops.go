@@ -760,7 +760,8 @@ func (s *store) file(sess *sessionInfo, in fileInput) (string, error) {
 }
 
 // claim takes an open task. The transaction holds the write lock from the
-// start, so if two sessions race, the second sees it already claimed.
+// start, so if two sessions race, the second sees it already claimed. A claim
+// marks who's working on a task; it isn't a lock, and close doesn't check it.
 func (s *store) claim(sess *sessionInfo, code string) error {
 	if sess == nil {
 		return errors.New("only a registered session can claim a task")
@@ -861,8 +862,12 @@ func (s *store) withdraw(sess *sessionInfo, code, reason string) error {
 	return tx.Commit()
 }
 
-// close finishes a task. Audit findings get an outcome, and every outcome
-// except duplicate needs a resolution the filer will see.
+// close finishes a task. Every outcome except duplicate needs a resolution
+// the filer will see. The close tool tells sessions an audit finding needs an
+// outcome, and they give one, but the store doesn't check, so the owner can
+// close anything bare. Nor does it check the claim: any session can close a
+// claimed task, so a claim left by a session that stopped never blocks the
+// next one, and there's nothing to release by hand.
 func (s *store) close(sess *sessionInfo, code, outcome, dupOf, resolution string) error {
 	outcome, dupOf, resolution = strings.TrimSpace(outcome), strings.TrimSpace(dupOf), strings.TrimSpace(resolution)
 	if outcome != "" && !slices.Contains(outcomes, outcome) {

@@ -681,6 +681,18 @@ func (s *store) file(sess *sessionInfo, in fileInput) (string, error) {
 		if superseded.status != "open" && superseded.status != "claimed" {
 			return "", fmt.Errorf("%s is already %s, so there's nothing to replace", superseded.code, superseded.status)
 		}
+		// A session replaces what it filed or what was addressed to it, such
+		// as the handoff it started from.
+		var ours bool
+		if err := tx.QueryRow(`select ?2 is null or from_session_pin = ?2 or assignee_session_pin = ?2
+			or (assignee_role_pin = (select role_pin from session where pin = ?2)
+			    and repo_pin in (select repo_pin from session_repo where session_pin = ?2))
+			  from task where pin = ?1`, superseded.pin, from).Scan(&ours); err != nil {
+			return "", err
+		}
+		if !ours {
+			return "", fmt.Errorf("%s wasn't filed by or addressed to this session, so it can't replace it", superseded.code)
+		}
 		replacedPin = superseded.pin
 	}
 	word := "finding"

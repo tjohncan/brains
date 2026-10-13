@@ -83,7 +83,7 @@ var mcpTools = []mcpTool{
 			{"to_role", "The role it's for, for example fixer.", nil},
 			{"repo", "The repo it's about, as owner/name.", nil},
 			{"to_session", "A session code, instead of to_role.", nil},
-			{"replaces", "The code of a task of this same type that this one supersedes, usually the handoff you " +
+			{"replaces", "The code of a task of this same type, filed by you or addressed to you, that this one supersedes: usually the handoff you " +
 				"started from. It closes as this is filed, so write this one to stand on its own.", nil},
 		},
 		required: []string{"title", "body"},

@@ -678,6 +678,19 @@ func TestReplacingAHandoff(t *testing.T) {
 	if _, err := st.file(next, handoff("Round three", first)); err == nil {
 		t.Error("replaced a handoff that was already closed")
 	}
+
+	// A session replaces only what it filed or what was addressed to it.
+	auditor, other := mustRegister(t, st, "auditor"), mustRegister(t, st, "auditor")
+	finding := mustFile(t, st, auditor, fileInput{title: "Theirs", body: "b", toRole: "fixer", repo: "owner/app"})
+	if _, err := st.file(other, fileInput{title: "Mine", body: "b", toRole: "fixer", repo: "owner/app", replaces: finding}); err == nil {
+		t.Error("an auditor replaced another auditor's finding")
+	}
+	if _, err := st.file(other, handoff("Not mine", second)); err == nil {
+		t.Error("an auditor replaced the fixers' handoff")
+	}
+	if _, err := st.file(auditor, fileInput{title: "Sharper", body: "b", toRole: "fixer", repo: "owner/app", replaces: finding}); err != nil {
+		t.Errorf("an auditor replacing its own finding: %v", err)
+	}
 }
 
 // TestReplacingABelief: a belief that sharpens another retires it, but only

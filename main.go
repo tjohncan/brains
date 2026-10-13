@@ -230,9 +230,13 @@ func runClaude(claude string, sess *sessionInfo, args []string) error {
 	if name == "" {
 		name = sess.code
 	}
-	self, err := os.Executable()
-	if err != nil {
-		return err
+	// The session's server is the installed copy when there is one, so a build
+	// elsewhere, say in the repo, can be rebuilt while the session runs.
+	server, err := installedPath()
+	if _, statErr := os.Stat(server); err != nil || statErr != nil {
+		if server, err = os.Executable(); err != nil {
+			return err
+		}
 	}
 	cfg, err := os.CreateTemp("", "brains-session-*.json")
 	if err != nil {
@@ -240,7 +244,7 @@ func runClaude(claude string, sess *sessionInfo, args []string) error {
 	}
 	defer os.Remove(cfg.Name())
 	err = json.NewEncoder(cfg).Encode(map[string]any{"mcpServers": map[string]any{
-		"brains": map[string]any{"type": "stdio", "command": self, "args": []string{"mcp", "-session", sess.code}},
+		"brains": map[string]any{"type": "stdio", "command": server, "args": []string{"mcp", "-session", sess.code}},
 	}})
 	if closeErr := cfg.Close(); err == nil {
 		err = closeErr
@@ -259,15 +263,11 @@ func runClaude(claude string, sess *sessionInfo, args []string) error {
 // installed copy is renamed aside first: sessions already running keep it,
 // new ones get the new build, and the registered path never changes.
 func runInstall() error {
-	dir, err := dataDir()
+	target, err := installedPath()
 	if err != nil {
 		return err
 	}
-	name := "brains"
-	if runtime.GOOS == "windows" {
-		name += ".exe"
-	}
-	target := filepath.Join(dir, name)
+	dir := filepath.Dir(target)
 	self, err := os.Executable()
 	if err != nil {
 		return err
@@ -295,6 +295,19 @@ func runInstall() error {
 	fmt.Println("installed", target)
 	fmt.Printf("\nRegister it with Claude Code once, in your user config:\n  claude mcp add --scope user brains -- \"%s\" mcp\n", target)
 	return nil
+}
+
+// installedPath is where brains install puts the build.
+func installedPath() (string, error) {
+	dir, err := dataDir()
+	if err != nil {
+		return "", err
+	}
+	name := "brains"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	return filepath.Join(dir, name), nil
 }
 
 func copyFile(src, dst string) error {

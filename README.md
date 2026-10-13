@@ -98,10 +98,10 @@ PATH. From this folder:
 
 `install` copies the build into your brains folder: `%LOCALAPPDATA%\brains` on Windows, and
 `$XDG_DATA_HOME/brains` (by default `~/.local/share/brains`) elsewhere. Put that folder on your
-PATH. Sessions keep running the copy they started with, so you can rebuild and install again
-while they work. `init` creates the database there, `brains.db`; set `BRAINS_DB` to use another
-file. Each user account gets its own folder, so a work account and a personal one keep separate
-records.
+PATH. Sessions run the installed copy, even when started from a build elsewhere, and keep running
+the copy they started with, so you can rebuild and install again while they work. `init` creates
+the database there, `brains.db`; set `BRAINS_DB` to use another file. Each user account gets its
+own folder, so a work account and a personal one keep separate records.
 
 Next, define a role for each kind of session you run, with a description written to its
 sessions:

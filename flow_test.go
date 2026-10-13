@@ -629,16 +629,16 @@ func TestBeliefsReachTheirScope(t *testing.T) {
 	if slices.Contains(told(), "Proposed rule.") {
 		t.Error("a proposal reached a session before it was accepted")
 	}
-	if _, _, err := st.settleBelief(proposal, "retire"); err == nil {
+	if _, _, _, err := st.settleBelief(proposal, "retire"); err == nil {
 		t.Error("retired a belief that was never accepted")
 	}
-	if _, _, err := st.settleBelief(proposal[len(proposal)-4:], "accept"); err != nil {
+	if _, _, _, err := st.settleBelief(proposal[len(proposal)-4:], "accept"); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(told(), "Proposed rule.") {
 		t.Error("an accepted proposal didn't reach the session")
 	}
-	if _, _, err := st.settleBelief(proposal, "retire"); err != nil {
+	if _, _, _, err := st.settleBelief(proposal, "retire"); err != nil {
 		t.Fatal(err)
 	}
 	if slices.Contains(told(), "Proposed rule.") {
@@ -649,7 +649,7 @@ func TestBeliefsReachTheirScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.settleBelief(doomed, "reject"); err != nil {
+	if _, _, _, err := st.settleBelief(doomed, "reject"); err != nil {
 		t.Fatal(err)
 	}
 	if one(t, st.db, "select count(*) from belief where code_name = ?", doomed) != "0" ||
@@ -750,7 +750,7 @@ func TestReplacingABelief(t *testing.T) {
 	if got := told(); !reflect.DeepEqual(got, []string{"Docs say what's here now."}) {
 		t.Errorf("while the replacement is only proposed, the fixer is told %q, want just the original", got)
 	}
-	code, retired, err := st.settleBelief(sharper[len(sharper)-4:], "accept")
+	code, retired, _, err := st.settleBelief(sharper[len(sharper)-4:], "accept")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -770,6 +770,25 @@ func TestReplacingABelief(t *testing.T) {
 	}
 	if got := told(); !reflect.DeepEqual(got, []string{"Mine, sharpened."}) {
 		t.Errorf("after the owner's replacement, the fixer is told %q, want only %s", got, mine)
+	}
+}
+
+// TestTwoReplacementsOfOneBelief: accepting a second replacement of the same
+// belief warns that both are in force.
+func TestTwoReplacementsOfOneBelief(t *testing.T) {
+	st := newStore(t)
+	fixer := mustRegister(t, st, "fixer")
+	original, err := st.believe(nil, "Rule.", "fixer", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := st.believe(fixer, "Rule, sharper.", "fixer", "", "why", original)
+	second, _ := st.believe(fixer, "Rule, sharper another way.", "fixer", "", "why", original)
+	if _, retired, warning, err := st.settleBelief(first, "accept"); err != nil || retired != original || warning != "" {
+		t.Errorf("first accept: retired %q, warning %q, %v; want %s retired, no warning", retired, warning, err, original)
+	}
+	if _, retired, warning, err := st.settleBelief(second, "accept"); err != nil || retired != "" || !strings.Contains(warning, first) {
+		t.Errorf("second accept: retired %q, warning %q, %v; want a warning naming %s", retired, warning, err, first)
 	}
 }
 

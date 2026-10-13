@@ -415,13 +415,16 @@ func runBeliefCommand(cmd string, args []string) error {
 			return err
 		}
 		for _, typed := range args {
-			code, retired, err := st.settleBelief(typed, cmd)
+			code, retired, warning, err := st.settleBelief(typed, cmd)
 			if err != nil {
 				return err
 			}
 			fmt.Println(map[string]string{"accept": "accepted", "reject": "rejected", "retire": "retired"}[cmd], code)
 			if retired != "" {
 				fmt.Println("retired", retired, "in its place")
+			}
+			if warning != "" {
+				fmt.Println("warning:", warning)
 			}
 		}
 	}

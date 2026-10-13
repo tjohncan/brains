@@ -115,23 +115,25 @@ var beliefMoves = map[string]struct{ from, to string }{
 
 // settleBelief accepts or rejects a proposal, or retires a belief that no
 // longer holds. These are yours alone: no tool offers them to sessions.
-// Accepting one that replaces another retires that one, and names it.
-func (s *store) settleBelief(typed, verdict string) (code, retired string, err error) {
+// Accepting one that replaces another retires that one, and names it. If
+// another replacement retired it first, both are in force, and the warning
+// says so.
+func (s *store) settleBelief(typed, verdict string) (code, retired, warning string, err error) {
 	move, ok := beliefMoves[verdict]
 	if !ok {
-		return "", "", fmt.Errorf("verdict %q: want accept, reject, or retire", verdict)
+		return "", "", "", fmt.Errorf("verdict %q: want accept, reject, or retire", verdict)
 	}
 	tx, err := s.db.Begin()
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	defer tx.Rollback()
 	b, err := findBelief(tx, typed)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if b.status != move.from {
-		return "", "", fmt.Errorf("%s is %s, not %s", b.code, b.status, move.from)
+		return "", "", "", fmt.Errorf("%s is %s, not %s", b.code, b.status, move.from)
 	}
 	if move.to == "" {
 		_, err = tx.Exec("delete from belief where pin = ?", b.pin)
@@ -139,25 +141,35 @@ func (s *store) settleBelief(typed, verdict string) (code, retired string, err e
 		_, err = tx.Exec("update belief set status = ?, updated_at = datetime('now') where pin = ?", move.to, b.pin)
 	}
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if err := logAction(tx, nil, "belief."+verdict, b.id, ""); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if verdict == "accept" && b.replaces != 0 {
 		var old beliefRef
 		if err := tx.QueryRow("select pin, id, code_name, status from belief where pin = ?", b.replaces).
 			Scan(&old.pin, &old.id, &old.code, &old.status); err != nil {
-			return "", "", err
+			return "", "", "", err
 		}
 		if old.status == "accepted" {
 			if err := retireBelief(tx, old, b.code); err != nil {
-				return "", "", err
+				return "", "", "", err
 			}
 			retired = old.code
+		} else {
+			var others string
+			if err := tx.QueryRow(`select coalesce(group_concat(code_name, ', '), '') from belief
+				 where replaces_belief_pin = ? and status = 'accepted' and pin <> ?`, old.pin, b.pin).Scan(&others); err != nil {
+				return "", "", "", err
+			}
+			warning = old.code + ", which this replaces, was already " + old.status
+			if others != "" {
+				warning += " in favor of " + others + ", so both are in force; retire one, or merge them"
+			}
 		}
 	}
-	return b.code, retired, tx.Commit()
+	return b.code, retired, warning, tx.Commit()
 }
 
 // scopedBelief is a belief with the scope it holds in, so what a session is

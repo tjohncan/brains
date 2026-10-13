@@ -269,8 +269,9 @@ insert into task_type (code_name, display_name, description) values
 , ('audit_finding', 'Audit finding', 'Confirm or deny, then fix')
 , ('improvement', 'Improvement', 'A change worth making that isn''t a defect');
 
--- Claiming is: update task set status = 'claimed', claimed_by_session_pin = ?
--- where pin = ? and status = 'open'. A second claimant updates zero rows.
+-- Claiming runs in a transaction that takes the write lock before it reads
+-- (openDB begins transactions immediate), so a second claimant waits, then
+-- finds the task already claimed.
 create table task (
   pin integer primary key autoincrement
 , created_at text not null default (datetime('now'))

@@ -35,8 +35,9 @@ over one SQLite file per user account.
 - **Fresh eyes** is a behavior a role can have. A fresh-eyes session can file findings and follow
   up on its own, and can't see anything else in brains, so earlier rounds can't steer it.
 
-brains offers sessions eleven MCP tools: register, file, withdraw, inbox, mine, show, claim,
-release, close, list, and propose. A fresh-eyes session gets four: file, withdraw, mine, and show.
+brains offers sessions twelve MCP tools: register, file, withdraw, inbox, mine, show, claim,
+release, close, list, propose, and brief. A fresh-eyes session gets five: file, withdraw, mine,
+show, and brief, which repeats a session's briefing on demand, as after compaction.
 
 Everything lives in the one SQLite file, not in CLAUDE.md files or Claude Code settings. brains
 logs every operation, with who did it and why, and keeps every earlier version of every row.
@@ -84,11 +85,12 @@ and needs nothing before it.
 
 A session starts in whatever folder you run `brains fresh` from, so resume it from there too.
 This repo is set up to be that folder: clone the repos sessions work on into
-`REPOS/<owner>/<repo>`, which git ignores (see [REPOS/README.md](REPOS/README.md)).
+`REPOS/<owner>/<repo>`, which git ignores (see [REPOS/README.md](REPOS/README.md)). Each session
+is told where its repo's clone is.
 
 ## Setup
 
-Building takes Go 1.27 or later, and running sessions takes Claude Code, with `claude` on your
+Building takes Go 1.26 or later, and running sessions takes Claude Code, with `claude` on your
 PATH. From this folder:
 
     go build
@@ -97,10 +99,38 @@ PATH. From this folder:
 
 `install` copies the build into your brains folder: `%LOCALAPPDATA%\brains` on Windows, and
 `$XDG_DATA_HOME/brains` (by default `~/.local/share/brains`) elsewhere. Put that folder on your
-PATH. Sessions keep running the copy they started with, so you can rebuild and install again
-while they work. `init` creates the database there, `brains.db`; set `BRAINS_DB` to use another
-file. Each user account gets its own folder, so a work account and a personal one keep separate
-records.
+PATH. To install a later build, run that build's install the same way, or build and install in one
+step with `go run . install`; plain `brains install` runs the copy already installed, which has
+nothing new to install. Sessions run the installed copy, even when started from a build elsewhere,
+and keep running the copy they started with, so you can rebuild and install again while they
+work. `init` creates the database there, `brains.db`; set `BRAINS_DB` to use another file. Each
+user account gets its own folder, so a work account and a personal one keep separate records.
+
+For tab completion in bash, add this line to `~/.bashrc`, as `install` reminds you:
+
+    complete -C brains brains
+
+It completes commands, flags, roles, repos, nicknames, and the endings of task and belief codes,
+in Git Bash and in bash on Linux and macOS. In zsh, the default on macOS, load bash-style
+completion first, in `~/.zshrc` (leave out compinit if your setup already runs it):
+
+    autoload -U +X compinit && compinit
+    autoload -U +X bashcompinit && bashcompinit
+    complete -C brains brains
+
+WSL takes three more steps to run the Windows build. WSL runs a Windows program only by its full
+name, passes it only the environment variables named in `WSLENV`, and hands it what you type
+while it runs. So link `brains` to the installed build from a folder on your WSL path:
+
+    ln -s /mnt/c/Users/<you>/AppData/Local/brains/brains.exe ~/.local/bin/brains
+
+and in WSL's `~/.bashrc`, use these lines in place of the one above:
+
+    export WSLENV="${WSLENV:+$WSLENV:}COMP_LINE:COMP_POINT"
+    complete -C 'brains </dev/null' brains
+
+The link follows each install and uses the same database as Windows; a Linux build would keep a
+database of its own. Command Prompt has no way for a program to complete its own arguments.
 
 Next, define a role for each kind of session you run, with a description written to its
 sessions:
@@ -136,7 +166,8 @@ plain session registers itself once you tell it its role and repo.
 | `roles.go`, `beliefs.go` | roles and beliefs |
 | `store.go` | the database: where it lives, `init`, and the history tables |
 | `schema.sql` | every table, embedded in the binary |
-| `flow_test.go`, `store_test.go` | the tests: `go test` |
+| `complete.go` | tab completion in bash |
+| `flow_test.go`, `store_test.go`, `complete_test.go` | the tests: `go test` |
 
 The SQLite driver, `modernc.org/sqlite`, is the only direct dependency. It's pure Go, so building
 needs no C compiler.

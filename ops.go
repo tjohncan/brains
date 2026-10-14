@@ -5,6 +5,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -140,12 +142,9 @@ func logAction(ex execer, sess *sessionInfo, op string, target []byte, purpose s
 // findRepo looks a repo up by owner/name, or by its name alone when only one
 // owner's repo has it, in any case. A repo brains hasn't seen is pin 0.
 func findRepo(ex execer, ref string) (pin int64, err error) {
-	owner, name, full := strings.Cut(strings.TrimSpace(ref), "/")
-	if !full {
-		owner, name = "", owner
-	}
-	if name == "" || (full && owner == "") || strings.Contains(name, "/") {
-		return 0, fmt.Errorf("repo %q: want owner/name", ref)
+	owner, name, err := splitRepo(ref)
+	if err != nil {
+		return 0, err
 	}
 	var n int
 	var all string
@@ -156,6 +155,76 @@ func findRepo(ex execer, ref string) (pin int64, err error) {
 		return 0, fmt.Errorf("repo %q could be %s; give owner/name", ref, all)
 	}
 	return pin, err
+}
+
+// splitRepo reads owner/name, or a name alone, with the owner empty.
+func splitRepo(ref string) (owner, name string, err error) {
+	owner, name, full := strings.Cut(ref, "/")
+	if !full {
+		owner, name = "", owner
+	}
+	owner, name = strings.TrimSpace(owner), strings.TrimSpace(name)
+	if name == "" || (full && owner == "") || strings.ContainsAny(owner+name, "/ \t") {
+		return "", "", fmt.Errorf("repo %q: want owner/name", strings.TrimSpace(ref))
+	}
+	return owner, name, nil
+}
+
+// newRepo says whether naming ref would add a repo brains hasn't seen, so a
+// command can say so and a misspelling shows.
+func newRepo(ex execer, ref string) bool {
+	pin, err := findRepo(ex, ref)
+	return err == nil && pin == 0
+}
+
+// repoName is how brains writes a repo it was given: owner/name, trimmed.
+func repoName(ref string) string {
+	owner, name, _ := splitRepo(ref)
+	return owner + "/" + name
+}
+
+// sessionRepos are the repos a session works on, as owner/name.
+func (s *store) sessionRepos(sess *sessionInfo) ([]string, error) {
+	return strings0(s.db, `select p.owner || '/' || p.name from session_repo sr join repo p on p.pin = sr.repo_pin
+		 where sr.session_pin = ? order by p.owner, p.name`, sess.pin)
+}
+
+// clonePath finds a repo's clone by the layout DESIGN.md describes:
+// REPOS/<owner>/<name> in the brains folder, which is the folder a session
+// starts in or one above it. When there's no clone, it's where one would go:
+// under the nearest folder with a REPOS folder that isn't inside REPOS itself,
+// since every brains checkout has a REPOS folder of its own. It's empty when
+// no folder up from start has one.
+func clonePath(start, owner, name string) (path string, exists bool) {
+	var home string
+	for dir := start; ; dir = filepath.Dir(dir) {
+		if p := filepath.Join(dir, "REPOS", owner, name); isDir(p) {
+			return p, true
+		}
+		if home == "" && isDir(filepath.Join(dir, "REPOS")) &&
+			!slices.Contains(strings.Split(filepath.ToSlash(dir), "/"), "REPOS") {
+			home = dir
+		}
+		if filepath.Dir(dir) == dir {
+			break
+		}
+	}
+	if home == "" {
+		return "", false
+	}
+	return filepath.Join(home, "REPOS", owner, name), false
+}
+
+func isDir(path string) bool {
+	info, err := os.Stat(path)
+	return err == nil && info.IsDir()
+}
+
+// sameDir says whether two paths name one folder, however they're spelled.
+func sameDir(a, b string) bool {
+	x, errA := os.Stat(a)
+	y, errB := os.Stat(b)
+	return errA == nil && errB == nil && os.SameFile(x, y)
 }
 
 // knownRepo is findRepo for reads, where a repo brains hasn't seen is a mistake.
@@ -173,8 +242,8 @@ func ensureRepo(ex execer, ref string) (int64, error) {
 	if err != nil || pin != 0 {
 		return pin, err
 	}
-	owner, name, full := strings.Cut(strings.TrimSpace(ref), "/")
-	if !full {
+	owner, name, _ := splitRepo(ref)
+	if owner == "" {
 		return 0, fmt.Errorf("repo %q is new to brains, so give it as owner/name", strings.TrimSpace(ref))
 	}
 	res, err := ex.Exec("insert into repo (id, owner, name) values (?, ?, ?)", newUUID(), owner, name)
@@ -270,6 +339,30 @@ func (s *store) register(r registration) (*sessionInfo, error) {
 	return sess, tx.Commit()
 }
 
+// forgetUnstarted deletes a session brains fresh registered whose server
+// never started, as when claude refused its arguments. Nothing happened in
+// it, and left in place it would hold its nickname and be what brains resume
+// finds. History keeps the row.
+func (s *store) forgetUnstarted(sess *sessionInfo) (bool, error) {
+	tx, err := s.db.Begin()
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	var n int
+	if err := tx.QueryRow("select count(*) from action where session_pin = ? and operation <> 'session.register'",
+		sess.pin).Scan(&n); err != nil || n > 0 {
+		return false, err
+	}
+	for _, del := range []string{"delete from session_repo where session_pin = ?",
+		"delete from session_initiative where session_pin = ?", "delete from session where pin = ?"} {
+		if _, err := tx.Exec(del, sess.pin); err != nil {
+			return false, err
+		}
+	}
+	return true, tx.Commit()
+}
+
 // findSession looks a session up by its nickname or its code, or by an
 // ending only it has, among the sessions in view; a full code reaches any.
 // Should an old session come back into view under a nickname a newer one
@@ -313,13 +406,34 @@ func sessionByConversation(ex execer, externalID string) (*sessionInfo, []byte, 
 	return findSession(ex, code)
 }
 
-// resume continues as a session registered earlier, after a restart.
-func (s *store) resume(code string) (*sessionInfo, error) {
-	sess, id, err := findSession(s.db, code)
+// resume continues as a session registered earlier, after a restart, in the
+// conversation it belongs to. A session with no conversation recorded takes
+// this one, so the next restart recognizes it by itself.
+func (s *store) resume(code, conversation string) (*sessionInfo, error) {
+	tx, err := s.db.Begin()
 	if err != nil {
 		return nil, err
 	}
-	return sess, logAction(s.db, sess, "session.resume", id, "resumed after a restart")
+	defer tx.Rollback()
+	sess, id, err := findSession(tx, code)
+	if err != nil {
+		return nil, err
+	}
+	switch {
+	case conversation == "" || sess.externalID == conversation:
+	case sess.externalID != "":
+		return nil, fmt.Errorf("%s belongs to another conversation; register as a new session instead", sess.called())
+	default:
+		if _, err := tx.Exec("update session set external_id = ?, updated_at = datetime('now') where pin = ?",
+			conversation, sess.pin); err != nil {
+			return nil, err
+		}
+		sess.externalID = conversation
+	}
+	if err := logAction(tx, sess, "session.resume", id, "resumed after a restart"); err != nil {
+		return nil, err
+	}
+	return sess, tx.Commit()
 }
 
 // latestSession is the most recent session in a role on a repo.
@@ -388,9 +502,10 @@ select t.code_name, tt.code_name, t.status, coalesce(t.severity, ''), coalesce(t
   left join task d on d.pin = t.duplicate_of_task_pin
  where `
 
-// Most severe first, then oldest first.
+// Handoffs first, since a session starts from one, then most severe first,
+// then oldest first.
 const taskOrder = `
- order by case t.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2
+ order by tt.code_name <> 'handoff', case t.severity when 'critical' then 0 when 'high' then 1 when 'medium' then 2
           when 'low' then 3 when 'info' then 4 else 5 end, t.pin`
 
 func (s *store) queryTasks(where string, args ...any) ([]taskRow, error) {
@@ -548,6 +663,9 @@ func (s *store) list(sess *sessionInfo, purpose, status, repo, typ string, old b
 		args = append(args, pin)
 	}
 	if typ = strings.TrimSpace(typ); typ != "" {
+		if !slices.Contains(taskTypes, typ) {
+			return nil, fmt.Errorf("type %q: want one of %s", typ, strings.Join(taskTypes, ", "))
+		}
 		where = append(where, "tt.code_name = ?")
 		args = append(args, typ)
 	}
@@ -635,12 +753,18 @@ func (s *store) file(sess *sessionInfo, in fileInput) (string, error) {
 		if err != nil {
 			return "", err
 		}
+		if to.freshEyes {
+			return "", fmt.Errorf("%s works with fresh eyes, so it has no inbox to read this in", to.called())
+		}
 		toPin = to.pin
 	}
 	if in.toRole != "" {
 		role, err := findRole(tx, in.toRole)
 		if err != nil {
 			return "", err
+		}
+		if role.freshEyes {
+			return "", fmt.Errorf("the %s role works with fresh eyes, so it has no inbox to read this in", role.code)
 		}
 		rolePin = role.pin
 	}
@@ -659,6 +783,18 @@ func (s *store) file(sess *sessionInfo, in fileInput) (string, error) {
 		}
 		if superseded.status != "open" && superseded.status != "claimed" {
 			return "", fmt.Errorf("%s is already %s, so there's nothing to replace", superseded.code, superseded.status)
+		}
+		// A session replaces what it filed or what was addressed to it, such
+		// as the handoff it started from.
+		var ours bool
+		if err := tx.QueryRow(`select ?2 is null or from_session_pin = ?2 or assignee_session_pin = ?2
+			or (assignee_role_pin = (select role_pin from session where pin = ?2)
+			    and repo_pin in (select repo_pin from session_repo where session_pin = ?2))
+			  from task where pin = ?1`, superseded.pin, from).Scan(&ours); err != nil {
+			return "", err
+		}
+		if !ours {
+			return "", fmt.Errorf("%s wasn't filed by or addressed to this session, so it can't replace it", superseded.code)
 		}
 		replacedPin = superseded.pin
 	}
@@ -695,7 +831,8 @@ func (s *store) file(sess *sessionInfo, in fileInput) (string, error) {
 }
 
 // claim takes an open task. The transaction holds the write lock from the
-// start, so if two sessions race, the second sees it already claimed.
+// start, so if two sessions race, the second sees it already claimed. A claim
+// marks who's working on a task; it isn't a lock, and close doesn't check it.
 func (s *store) claim(sess *sessionInfo, code string) error {
 	if sess == nil {
 		return errors.New("only a registered session can claim a task")
@@ -796,8 +933,12 @@ func (s *store) withdraw(sess *sessionInfo, code, reason string) error {
 	return tx.Commit()
 }
 
-// close finishes a task. Audit findings get an outcome, and every outcome
-// except duplicate needs a resolution the filer will see.
+// close finishes a task. Every outcome except duplicate needs a resolution
+// the filer will see. The close tool tells sessions an audit finding needs an
+// outcome, and they give one, but the store doesn't check, so the owner can
+// close anything bare. Nor does it check the claim: any session can close a
+// claimed task, so a claim left by a session that stopped never blocks the
+// next one, and there's nothing to release by hand.
 func (s *store) close(sess *sessionInfo, code, outcome, dupOf, resolution string) error {
 	outcome, dupOf, resolution = strings.TrimSpace(outcome), strings.TrimSpace(dupOf), strings.TrimSpace(resolution)
 	if outcome != "" && !slices.Contains(outcomes, outcome) {
@@ -830,7 +971,19 @@ func (s *store) close(sess *sessionInfo, code, outcome, dupOf, resolution string
 		if dup.pin == ref.pin {
 			return errors.New("a task can't be a duplicate of itself")
 		}
-		dupPin = dup.pin
+		// A duplicate names the task that carries the outcome: the end of any
+		// chain of duplicates. A chain that ends here would be a loop.
+		var root int64
+		if err := tx.QueryRow(`with recursive chain(pin, next) as (
+			select pin, duplicate_of_task_pin from task where pin = ?
+			union select t.pin, t.duplicate_of_task_pin from task t join chain c on t.pin = c.next)
+			select pin from chain where next is null`, dup.pin).Scan(&root); err != nil {
+			return err
+		}
+		if root == ref.pin {
+			return fmt.Errorf("%s is already a duplicate of %s", dup.code, ref.code)
+		}
+		dupPin = root
 	}
 	if sess != nil {
 		by = sess.pin

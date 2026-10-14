@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -143,6 +145,12 @@ func TestAuditLoop(t *testing.T) {
 		t.Errorf("resolution = %q, want the fixer's words", d.resolution)
 	}
 
+	for _, in := range []fileInput{{toSession: auditor.nickname}, {toRole: "auditor", repo: "owner/app"}} {
+		in.typ, in.title = "handoff", "Please re-audit"
+		if _, err := st.file(fixer, in); err == nil || !strings.Contains(err.Error(), "fresh eyes") {
+			t.Errorf("a handoff to fresh eyes (%+v): err = %v, want refused: nothing there reads it", in, err)
+		}
+	}
 	handoff := mustFile(t, st, rival, fileInput{typ: "handoff", title: "Take over CORS", body: "notes", toSession: fixer.code})
 	if _, err := st.show(auditor, handoff, "peek", true); err == nil {
 		t.Error("fresh eyes opened a task someone else filed")
@@ -157,26 +165,74 @@ func TestAuditLoop(t *testing.T) {
 	}
 }
 
+// TestDuplicatesNameTheOriginal: a duplicate of a duplicate names the task
+// that carries the outcome, and a loop is refused.
+func TestDuplicatesNameTheOriginal(t *testing.T) {
+	st := newStore(t)
+	fixer, auditor := mustRegister(t, st, "fixer"), mustRegister(t, st, "auditor")
+	file := func(title string) string {
+		return mustFile(t, st, auditor, fileInput{title: title, body: "b", toRole: "fixer", repo: "owner/app"})
+	}
+	original, repeat, again := file("Original"), file("Repeat"), file("Again")
+	if err := st.close(fixer, repeat, "duplicate", original, ""); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.close(fixer, again, "duplicate", repeat, ""); err != nil {
+		t.Fatal(err)
+	}
+	if d, err := st.show(nil, again, "", false); err != nil || d.dupOf != original {
+		t.Errorf("a duplicate of a duplicate names %v, %v; want %s", d, err, original)
+	}
+	if err := st.close(fixer, original, "duplicate", again, ""); err == nil {
+		t.Error("closed the original as a duplicate of its own duplicate")
+	}
+}
+
 func TestResumeKeepsTheSession(t *testing.T) {
 	st := newStore(t)
 	fixer := mustRegister(t, st, "fixer")
-	again, err := st.resume(fixer.code)
+	again, err := st.resume(fixer.code, "")
 	if err != nil {
 		t.Fatal(err)
 	}
 	if again.pin != fixer.pin || again.role != "fixer" {
 		t.Errorf("resumed as %+v, want %+v", again, fixer)
 	}
-	if _, err := st.resume("20260101-nobody-xxxx"); err == nil {
+	if _, err := st.resume("20260101-nobody-xxxx", ""); err == nil {
 		t.Error("resuming an unknown session succeeded")
+	}
+
+	// A session belongs to its conversation; one with none recorded takes the
+	// conversation that resumes it.
+	other, err := st.register(registration{role: "fixer", repo: "owner/app", externalID: "conversation-a"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.resume(other.code, "conversation-b"); err == nil || !strings.Contains(err.Error(), "another conversation") {
+		t.Errorf("resume from another conversation: err = %v, want refused", err)
+	}
+	if _, err := st.resume(other.code, "conversation-a"); err != nil {
+		t.Errorf("resume in its own conversation: %v", err)
+	}
+	if again, err := st.resume(fixer.code, "conversation-c"); err != nil || again.externalID != "conversation-c" {
+		t.Errorf("resume of a session with no conversation = %+v, %v; want conversation-c recorded", again, err)
+	}
+	if sess, _, err := sessionByConversation(st.db, "conversation-c"); err != nil || sess == nil || sess.pin != fixer.pin {
+		t.Errorf("sessionByConversation(conversation-c) = %+v, %v; want %s", sess, err, fixer.code)
 	}
 }
 
 // mcpExchange feeds requests to the MCP server and returns its replies by id.
 func mcpExchange(t *testing.T, st *store, session string, requests ...string) map[string]map[string]any {
 	t.Helper()
+	return mcpExchangeIn(t, st, session, "", requests...)
+}
+
+// mcpExchangeIn is mcpExchange for a session that started in dir.
+func mcpExchangeIn(t *testing.T, st *store, session, dir string, requests ...string) map[string]map[string]any {
+	t.Helper()
 	var out bytes.Buffer
-	if err := serveMCP(st, session, strings.NewReader(strings.Join(requests, "\n")+"\n"), &out); err != nil {
+	if err := serveMCP(st, session, dir, strings.NewReader(strings.Join(requests, "\n")+"\n"), &out); err != nil {
 		t.Fatal(err)
 	}
 	replies := map[string]map[string]any{}
@@ -249,16 +305,20 @@ func TestMCPFreshEyes(t *testing.T) {
 	if !ok || hello["protocolVersion"] != "2025-06-18" {
 		t.Fatalf("initialize = %v, want protocolVersion 2025-06-18 echoed", r["1"])
 	}
+	unknown := mcpExchange(t, st, auditor.code, strings.Replace(initializeRequest, "2025-06-18", "1999-01-01", 1))
+	if got := unknown["1"]["result"].(map[string]any)["protocolVersion"]; got != protocolVersions[len(protocolVersions)-1] {
+		t.Errorf("initialize asking for 1999-01-01 = %v, want the newest version brains is written to", got)
+	}
 	told, _ := hello["instructions"].(string)
 	for _, want := range []string{auditor.code + " (auditor1): auditor on owner/app", "You read the repo cold", "fresh eyes", "- Never push"} {
 		if !strings.Contains(told, want) {
 			t.Errorf("instructions lack %q:\n%s", want, told)
 		}
 	}
-	if got, want := toolNames(t, r["2"]), []string{"file", "withdraw", "mine", "show"}; !reflect.DeepEqual(got, want) {
+	if got, want := toolNames(t, r["2"]), []string{"file", "withdraw", "mine", "show", "brief"}; !reflect.DeepEqual(got, want) {
 		t.Errorf("fresh tools = %v, want %v", got, want)
 	}
-	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "registered this session as "+auditor.code) {
+	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "already knows this session as "+auditor.code) {
 		t.Errorf("register = %q, %v; want refused, naming the session", text, isErr)
 	}
 	if text, isErr := toolText(t, r["4"]); !isErr || !strings.Contains(text, "fresh eyes") {
@@ -293,7 +353,7 @@ func TestMCPFullMode(t *testing.T) {
 	if !strings.Contains(told, "Call register once") || !strings.Contains(told, "- Never push") || strings.Contains(told, "diary") {
 		t.Errorf("instructions before register = %q, want register asked for and only the beliefs for every session", told)
 	}
-	want := []string{"register", "file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose"}
+	want := []string{"register", "file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose", "brief"}
 	if got := toolNames(t, r["2"]); !reflect.DeepEqual(got, want) {
 		t.Errorf("tools = %v, want %v", got, want)
 	}
@@ -305,8 +365,9 @@ func TestMCPFullMode(t *testing.T) {
 	}
 	text, isErr := toolText(t, r["5"])
 	if isErr || !strings.Contains(text, ": fixer on o/r.") || !strings.Contains(text, "You fix what's filed") ||
-		!strings.Contains(text, "- No diary comments.") {
-		t.Errorf("register = %q, %v; want the role, lowercased, what it's for, and its beliefs", text, isErr)
+		!strings.Contains(text, "- No diary comments.") || !strings.Contains(text, "register with resume") {
+		t.Errorf("register = %q, %v; want the role, lowercased, what it's for, its beliefs, and how to resume "+
+			"after a restart, since there's no conversation to recognize", text, isErr)
 	}
 	if text, isErr := toolText(t, r["6"]); !isErr || !strings.Contains(text, "purpose is required") {
 		t.Errorf("inbox without purpose = %q, %v; want refused", text, isErr)
@@ -329,7 +390,14 @@ func TestRegisteringIntoFreshEyes(t *testing.T) {
 		toolCall(2, "inbox", map[string]string{"purpose": "peek"}),
 		toolCall(3, "register", map[string]string{"role": "fixer", "repo": "o/r"}),
 		toolCall(4, "list", map[string]string{"purpose": "peek again"}),
+		`{"jsonrpc":"2.0","id":5,"method":"tools/list"}`,
 	)
+	if note := r["<nil>"]; note == nil || note["method"] != "notifications/tools/list_changed" {
+		t.Errorf("after register, notification = %v; want tools/list_changed", note)
+	}
+	if got, want := toolNames(t, r["5"]), []string{"file", "withdraw", "mine", "show", "brief"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("tools after registering into fresh eyes = %v, want %v", got, want)
+	}
 	if text, _ := toolText(t, r["1"]); !strings.Contains(text, "fresh eyes") {
 		t.Errorf("register = %q, want it told about fresh eyes", text)
 	}
@@ -337,6 +405,48 @@ func TestRegisteringIntoFreshEyes(t *testing.T) {
 		if text, isErr := toolText(t, r[id]); !isErr || !strings.Contains(text, "fresh eyes") {
 			t.Errorf("reply %s = %q, %v; want refused for fresh eyes", id, text, isErr)
 		}
+	}
+	if text, isErr := toolText(t, r["3"]); !isErr || !strings.Contains(text, "already knows this session") {
+		t.Errorf("a second register = %q, %v; want refused: one server serves one session", text, isErr)
+	}
+	if n := one(t, st.db, "select count(*) from session"); n != "1" {
+		t.Errorf("%s sessions recorded, want 1", n)
+	}
+}
+
+// TestSessionsAreToldWhereTheirRepoIs: a session starts in the brains folder,
+// so it's told where its repo is cloned under REPOS, or where the clone goes.
+func TestSessionsAreToldWhereTheirRepoIs(t *testing.T) {
+	st := newStore(t)
+	root := t.TempDir()
+	clone := filepath.Join(root, "REPOS", "owner", "app")
+	// A clone of brains has a REPOS folder of its own.
+	if err := os.MkdirAll(filepath.Join(clone, "REPOS"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	told := func(sess *sessionInfo, dir string) string {
+		t.Helper()
+		r := mcpExchangeIn(t, st, sess.code, dir, initializeRequest)
+		s, _ := r["1"]["result"].(map[string]any)["instructions"].(string)
+		return s
+	}
+	fixer := mustRegister(t, st, "fixer") // on owner/app
+	if got := told(fixer, root); !strings.Contains(got, "is cloned at "+clone+": work there, not in "+root) {
+		t.Errorf("started in the brains folder, the fixer is told %q", got)
+	}
+	if got := told(fixer, clone); !strings.Contains(got, "is cloned at "+clone+", where this session started") {
+		t.Errorf("started in its clone, the fixer is told %q", got)
+	}
+	other, err := st.register(registration{role: "fixer", repo: "owner/other"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	place := filepath.Join(root, "REPOS", "owner", "other")
+	if got := told(other, clone); !strings.Contains(got, "isn't cloned yet") || !strings.Contains(got, place) {
+		t.Errorf("a repo with no clone, the fixer is told %q; want its place, %s", got, place)
+	}
+	if got := told(fixer, ""); strings.Contains(got, "cloned") {
+		t.Errorf("with no folder known, the fixer is told %q; want nothing about clones", got)
 	}
 }
 
@@ -362,17 +472,21 @@ func TestFreshFixer(t *testing.T) {
 	if len(fixer.externalID) != 36 || one(t, st.db, "select external_id from session where pin = ?", fixer.pin) != fixer.externalID {
 		t.Errorf("external_id = %q, want the conversation's UUID recorded", fixer.externalID)
 	}
-	r := mcpExchange(t, st, fixer.code[len(fixer.code)-4:], initializeRequest, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
+	r := mcpExchange(t, st, fixer.code[len(fixer.code)-4:], initializeRequest, `{"jsonrpc":"2.0","id":2,"method":"tools/list"}`,
+		toolCall(3, "brief", nil))
 	told, _ := r["1"]["result"].(map[string]any)["instructions"].(string)
 	want := "For every session:\n- Never push; the owner pushes.\n\nOn owner/app:\n" +
-		"- Build in WSL, against a copy.\n\nFor a fixer:\n- No diary comments."
+		"- Build in WSL, against a copy.\n\nFor every fixer:\n- No diary comments."
 	if !strings.Contains(told, fixer.called()+": fixer on owner/app") || !strings.Contains(told, "Check the handoff") ||
 		!strings.Contains(told, want) || strings.Contains(told, "Auditors only") || strings.Contains(told, "Another repo") {
 		t.Errorf("instructions = %q\nwant the session, how to work, and exactly the beliefs that reach it:\n%s", told, want)
 	}
-	want2 := []string{"file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose"}
+	want2 := []string{"file", "withdraw", "inbox", "mine", "show", "claim", "release", "close", "list", "propose", "brief"}
 	if got := toolNames(t, r["2"]); !reflect.DeepEqual(got, want2) {
 		t.Errorf("tools = %v, want %v", got, want2)
+	}
+	if text, isErr := toolText(t, r["3"]); isErr || !strings.Contains(text, want) || !strings.Contains(text, "Check the handoff") {
+		t.Errorf("brief = %q, %v; want the briefing again, beliefs included", text, isErr)
 	}
 }
 
@@ -394,6 +508,9 @@ func TestImprovementsCloseWithoutAnOutcome(t *testing.T) {
 	}
 	if len(rows) != 1 || rows[0].code != idea || rows[0].typ != "improvement" {
 		t.Errorf("list by type = %v, want just %s", rows, idea)
+	}
+	if _, err := st.list(fixer, "findings, by the word in their codes", "all", "", "finding", false); err == nil {
+		t.Error("listed tasks of a type that doesn't exist")
 	}
 	if err := st.close(fixer, idea, "", "", ""); err != nil {
 		t.Errorf("closing an improvement without an outcome: %v", err)
@@ -487,7 +604,7 @@ func TestRolesAreDefinedNotTyped(t *testing.T) {
 	if _, err := st.register(registration{role: "fixer", repo: "o/r"}); err == nil || !strings.Contains(err.Error(), "no roles are defined") {
 		t.Errorf("register with no roles: err = %v, want refused", err)
 	}
-	for _, bad := range []string{"Bad Name", "fixer!", "-fixer", "a-very-long-role-name-indeed"} {
+	for _, bad := range []string{"Bad Name", "fixer!", "-fixer", "2fa", "a-very-long-role-name-indeed"} {
 		if _, err := st.defineRole(bad, "x", nil); err == nil {
 			t.Errorf("defined a role named %q", bad)
 		}
@@ -560,16 +677,16 @@ func TestBeliefsReachTheirScope(t *testing.T) {
 	if slices.Contains(told(), "Proposed rule.") {
 		t.Error("a proposal reached a session before it was accepted")
 	}
-	if _, _, err := st.settleBelief(proposal, "retire"); err == nil {
+	if _, _, _, err := st.settleBelief(proposal, "retire"); err == nil {
 		t.Error("retired a belief that was never accepted")
 	}
-	if _, _, err := st.settleBelief(proposal[len(proposal)-4:], "accept"); err != nil {
+	if _, _, _, err := st.settleBelief(proposal[len(proposal)-4:], "accept"); err != nil {
 		t.Fatal(err)
 	}
 	if !slices.Contains(told(), "Proposed rule.") {
 		t.Error("an accepted proposal didn't reach the session")
 	}
-	if _, _, err := st.settleBelief(proposal, "retire"); err != nil {
+	if _, _, _, err := st.settleBelief(proposal, "retire"); err != nil {
 		t.Fatal(err)
 	}
 	if slices.Contains(told(), "Proposed rule.") {
@@ -580,7 +697,7 @@ func TestBeliefsReachTheirScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, _, err := st.settleBelief(doomed, "reject"); err != nil {
+	if _, _, _, err := st.settleBelief(doomed, "reject"); err != nil {
 		t.Fatal(err)
 	}
 	if one(t, st.db, "select count(*) from belief where code_name = ?", doomed) != "0" ||
@@ -638,8 +755,25 @@ func TestReplacingAHandoff(t *testing.T) {
 	if len(rows) != 1 || rows[0].code != second {
 		t.Errorf("the next fixer's inbox = %v, want only %s", rows, second)
 	}
+	urgent := mustFile(t, st, nil, fileInput{title: "Urgent", body: "b", severity: "critical", toRole: "fixer", repo: "owner/app"})
+	if rows, err := st.inbox(next, "check the handoff"); err != nil || len(rows) != 2 || rows[0].code != second {
+		t.Errorf("inbox = %v, %v; want the handoff before %s", rows, err, urgent)
+	}
 	if _, err := st.file(next, handoff("Round three", first)); err == nil {
 		t.Error("replaced a handoff that was already closed")
+	}
+
+	// A session replaces only what it filed or what was addressed to it.
+	auditor, other := mustRegister(t, st, "auditor"), mustRegister(t, st, "auditor")
+	finding := mustFile(t, st, auditor, fileInput{title: "Theirs", body: "b", toRole: "fixer", repo: "owner/app"})
+	if _, err := st.file(other, fileInput{title: "Mine", body: "b", toRole: "fixer", repo: "owner/app", replaces: finding}); err == nil {
+		t.Error("an auditor replaced another auditor's finding")
+	}
+	if _, err := st.file(other, handoff("Not mine", second)); err == nil {
+		t.Error("an auditor replaced the fixers' handoff")
+	}
+	if _, err := st.file(auditor, fileInput{title: "Sharper", body: "b", toRole: "fixer", repo: "owner/app", replaces: finding}); err != nil {
+		t.Errorf("an auditor replacing its own finding: %v", err)
 	}
 }
 
@@ -668,7 +802,7 @@ func TestReplacingABelief(t *testing.T) {
 	if got := told(); !reflect.DeepEqual(got, []string{"Docs say what's here now."}) {
 		t.Errorf("while the replacement is only proposed, the fixer is told %q, want just the original", got)
 	}
-	code, retired, err := st.settleBelief(sharper[len(sharper)-4:], "accept")
+	code, retired, _, err := st.settleBelief(sharper[len(sharper)-4:], "accept")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,6 +811,15 @@ func TestReplacingABelief(t *testing.T) {
 	}
 	if got := told(); !reflect.DeepEqual(got, []string{"Docs say what's here now, and leave out today and new."}) {
 		t.Errorf("after accepting the replacement, the fixer is told %q, want only the sharper one", got)
+	}
+	// One belief in full names both ends of the replacement, retired or not.
+	if d, err := st.belief(original); err != nil || d.status != "retired" || len(d.replacedBy) != 1 ||
+		!strings.HasPrefix(d.replacedBy[0], sharper) {
+		t.Errorf("belief(original) = %+v, %v; want retired, replaced by %s", d, err, sharper)
+	}
+	if d, err := st.belief(sharper[len(sharper)-4:]); err != nil || d.replaces != original || d.from != fixer.code ||
+		!strings.Contains(renderBelief(d), "why: The owner's words") {
+		t.Errorf("belief(sharper) = %+v, %v; want it to name %s, its proposer, and its note", d, err, original)
 	}
 	if _, err := st.believe(nil, "Later still.", "fixer", "", "", original); err == nil {
 		t.Error("replaced a belief that was already retired")
@@ -688,6 +831,25 @@ func TestReplacingABelief(t *testing.T) {
 	}
 	if got := told(); !reflect.DeepEqual(got, []string{"Mine, sharpened."}) {
 		t.Errorf("after the owner's replacement, the fixer is told %q, want only %s", got, mine)
+	}
+}
+
+// TestTwoReplacementsOfOneBelief: accepting a second replacement of the same
+// belief warns that both are in force.
+func TestTwoReplacementsOfOneBelief(t *testing.T) {
+	st := newStore(t)
+	fixer := mustRegister(t, st, "fixer")
+	original, err := st.believe(nil, "Rule.", "fixer", "", "", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, _ := st.believe(fixer, "Rule, sharper.", "fixer", "", "why", original)
+	second, _ := st.believe(fixer, "Rule, sharper another way.", "fixer", "", "why", original)
+	if _, retired, warning, err := st.settleBelief(first, "accept"); err != nil || retired != original || warning != "" {
+		t.Errorf("first accept: retired %q, warning %q, %v; want %s retired, no warning", retired, warning, err, original)
+	}
+	if _, retired, warning, err := st.settleBelief(second, "accept"); err != nil || retired != "" || !strings.Contains(warning, first) {
+		t.Errorf("second accept: retired %q, warning %q, %v; want a warning naming %s", retired, warning, err, first)
 	}
 }
 
@@ -738,14 +900,18 @@ func TestRegisteringRecordsTheConversation(t *testing.T) {
 		toolCall(1, "register", map[string]string{"role": "fixer", "repo": "owner/app"}),
 		toolCall(2, "register", map[string]string{"role": "auditor", "repo": "owner/app"}),
 	)
-	if text, isErr := toolText(t, r["1"]); isErr {
+	text, isErr := toolText(t, r["1"])
+	if isErr {
 		t.Fatalf("register = %q, %v", text, isErr)
+	}
+	if strings.Contains(text, "register with resume") {
+		t.Errorf("register = %q; want no resume advice, since a restarted server recognizes the conversation", text)
 	}
 	sess, _, err := sessionByConversation(st.db, conversation)
 	if err != nil || sess == nil {
 		t.Fatalf("sessionByConversation = %v, %v; want the session it just registered", sess, err)
 	}
-	if text, isErr := toolText(t, r["2"]); !isErr || !strings.Contains(text, "already knows this conversation") {
+	if text, isErr := toolText(t, r["2"]); !isErr || !strings.Contains(text, "already knows this") {
 		t.Errorf("a second register = %q, %v; want refused, naming the session", text, isErr)
 	}
 	if again, _, err := findSession(st.db, sess.nickname); err != nil || again.externalID != conversation {
@@ -856,6 +1022,15 @@ func TestReposByName(t *testing.T) {
 	if _, err := ensureRepo(st.db, "app"); err == nil || !strings.Contains(err.Error(), "someone/app") {
 		t.Errorf("a name two owners share: err = %v, want both named", err)
 	}
+	if pin, err := ensureRepo(st.db, " owner / app "); err != nil || pin != auth {
+		t.Errorf("ensureRepo(%q) = %d, %v; want %d", " owner / app ", pin, err, auth)
+	}
+	if _, err := ensureRepo(st.db, "own er/app"); err == nil {
+		t.Error("added a repo with a space inside its owner")
+	}
+	if !newRepo(st.db, "owner/ap") || newRepo(st.db, "owner/app") {
+		t.Error("newRepo can't tell a repo brains has seen from one it hasn't")
+	}
 	if _, err := st.list(nil, "", "all", "nobody/nothing", "", false); err == nil {
 		t.Error("listed tasks for a repo brains has never seen")
 	}
@@ -881,6 +1056,27 @@ func TestLatestSession(t *testing.T) {
 	sess, _, err := latestSession(st.db, "Fixer", "app")
 	if err != nil || sess.code != second.code || sess.externalID != second.externalID {
 		t.Errorf("latest fixer on app = %+v, %v; want %s and its conversation", sess, err, second.code)
+	}
+}
+
+// TestUnstartedSessionsAreForgotten: a session whose server never started is
+// deleted after claude exits; one whose server started is kept.
+func TestUnstartedSessionsAreForgotten(t *testing.T) {
+	st := newStore(t)
+	never := mustRegister(t, st, "fixer")
+	if forgot, err := st.forgetUnstarted(never); err != nil || !forgot {
+		t.Errorf("forgetUnstarted(never started) = %v, %v; want forgotten", forgot, err)
+	}
+	if n := one(t, st.db, "select count(*) from session where pin = ?", never.pin); n != "0" {
+		t.Error("a session that never started is still recorded")
+	}
+	started := mustRegister(t, st, "fixer")
+	mcpExchange(t, st, started.code, initializeRequest)
+	if forgot, err := st.forgetUnstarted(started); err != nil || forgot {
+		t.Errorf("forgetUnstarted(started) = %v, %v; want kept", forgot, err)
+	}
+	if started.nickname != "fixer1" {
+		t.Errorf("the next fixer is %s; want fixer1, freed by the forgotten one", started.nickname)
 	}
 }
 
@@ -911,8 +1107,11 @@ func TestNicknames(t *testing.T) {
 	if sess, _, err := findSession(st.db, "Auditor2"); err != nil || sess.code != second.code || sess.nickname != "auditor2" {
 		t.Errorf("findSession(auditor2) = %+v, %v; want %s", sess, err, second.code)
 	}
-	if _, err := st.file(fixer, fileInput{typ: "handoff", title: "For hm", toSession: "hm"}); err != nil {
+	if _, err := st.file(named, fileInput{typ: "handoff", title: "For fixer1", toSession: "fixer1"}); err != nil {
 		t.Errorf("a handoff to a session by nickname: %v", err)
+	}
+	if _, err := st.defineRole("hm", "A lens that earned a role.", nil); err == nil {
+		t.Error("defined a role named like a session in view")
 	}
 
 	mustExec(t, st.db, "update session set started_at = datetime('now', '-40 days') where pin = ?", first.pin)

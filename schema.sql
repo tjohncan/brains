@@ -185,7 +185,7 @@ create table role (
 
 , constraint uix_role_id unique(id)
 , constraint uix_role_code_name unique(code_name)
-, constraint ck_role_code_name check(length(code_name) between 1 and 20 and code_name not glob '*[^a-z0-9-]*')
+, constraint ck_role_code_name check(length(code_name) between 1 and 20 and code_name glob '[a-z]*' and code_name not glob '*[^a-z0-9-]*')
 , constraint ck_role_description_len check(length(description) <= 2000)
 , constraint ck_role_is_fresh_eyes check(is_fresh_eyes in (0, 1))
 );
@@ -269,8 +269,9 @@ insert into task_type (code_name, display_name, description) values
 , ('audit_finding', 'Audit finding', 'Confirm or deny, then fix')
 , ('improvement', 'Improvement', 'A change worth making that isn''t a defect');
 
--- Claiming is: update task set status = 'claimed', claimed_by_session_pin = ?
--- where pin = ? and status = 'open'. A second claimant updates zero rows.
+-- Claiming runs in a transaction that takes the write lock before it reads
+-- (openDB begins transactions immediate), so a second claimant waits, then
+-- finds the task already claimed.
 create table task (
   pin integer primary key autoincrement
 , created_at text not null default (datetime('now'))

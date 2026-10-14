@@ -37,6 +37,8 @@ its tools; you use the `brains` command.
   its filings, and doesn't register again.
 - A plain `claude` session has brains too. Tell it to register as a role on a repo; that records
   the conversation as well, so `brains resume` reaches it afterwards.
+- After compaction, or after beliefs change mid-session, tell a session to call brief: it reads
+  its role and beliefs again as brains has them then.
 
 ## See what's going on
 
@@ -81,6 +83,7 @@ task instead, where it stays open until someone acts on it or declines it.
     brains beliefs                            accepted ones, broadest first
     brains beliefs -role fixer -repo app      exactly what a fixer there is told
     brains beliefs -status proposed           waiting for you
+    brains belief CODE                        one in full: its note, what it replaces, what replaced it
     brains believe "..." [-role R] [-repo REPO] [-replaces CODE] -note "..."
     brains accept CODE...     brains reject CODE...     brains retire CODE...
 
@@ -106,8 +109,8 @@ replaces, so you can read the pair before deciding.
 Run these in order the first time, and again whenever a repo is new to you.
 
 1. Define your roles, then read them back as a session will hear them: `brains roles`.
-2. Add two machine facts sessions would otherwise have to discover. Ideas: where repos are
-   cloned (`REPOS/<owner>/<repo>`), what's installed in WSL, which account `gh` is logged in to.
+2. Add two machine facts sessions would otherwise have to discover. Ideas: what's installed in
+   WSL, which account `gh` is logged in to, which browsers can run headless.
 3. Add one code-style preference of your own, for fixers everywhere or for one repo.
 4. Add the house rules for one repo, scoped to the repo rather than to a role, so auditors
    reading it cold are held to them too.

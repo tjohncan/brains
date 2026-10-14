@@ -42,8 +42,8 @@ func findRole(ex execer, name string) (roleInfo, error) {
 // change touches only what's given. Only you define roles.
 func (s *store) defineRole(name, description string, freshEyes *bool) (created bool, err error) {
 	name, description = strings.ToLower(strings.TrimSpace(name)), strings.TrimSpace(description)
-	if name == "" || slug(name) != name {
-		return false, fmt.Errorf("role %q: a name is lowercase letters and digits, with single hyphens between, at most 20 characters", name)
+	if name == "" || slug(name) != name || name[0] < 'a' || name[0] > 'z' {
+		return false, fmt.Errorf("role %q: a name is lowercase letters and digits, with single hyphens between, starting with a letter, at most 20 characters", name)
 	}
 	var fresh any
 	if freshEyes != nil {
@@ -61,6 +61,9 @@ func (s *store) defineRole(name, description string, freshEyes *bool) (created b
 	case errors.Is(err, sql.ErrNoRows):
 		if description == "" {
 			return false, errors.New("a new role needs a description: what it's for, as its sessions should hear it")
+		}
+		if n := 0; tx.QueryRow("select count(*) from session where nickname = ? and "+sessionInView, name).Scan(&n) == nil && n > 0 {
+			return false, fmt.Errorf("role %q: a session in view has that nickname", name)
 		}
 		id, created = newUUID(), true
 		if _, err := tx.Exec("insert into role (id, code_name, description, is_fresh_eyes) values (?, ?, ?, coalesce(?, 0))",

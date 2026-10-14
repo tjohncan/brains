@@ -81,9 +81,12 @@ Knowing the session up front is what lets brains brief it. MCP instructions sit 
 prompt, so unlike a tool reply they survive compaction. They name the session, say what its role
 is for, and list every accepted belief that reaches it, as of when the server started. brains also
 picks the conversation's ID (`--session-id`), so `session.external_id` ties the record to its
-transcript. A plain `claude` session still gets brains at user scope and registers itself. Until
-it does, it's told only the beliefs for every role on every repo; the register reply gives it the
-rest.
+transcript. If claude fails before the session's server starts, as on a mistyped flag, brains
+forgets the session, so it doesn't hold a nickname or become what `brains resume` finds. A plain
+`claude` session still gets brains at user scope and registers itself. Until it does, it's told
+only the beliefs for every role on every repo; the register reply gives it the rest. A tool reply
+doesn't outlast compaction the way instructions do, so the brief tool repeats the whole briefing
+on demand, as brains has it then.
 
 **Sessions have nicknames.** A code is for records; a nickname is for people. Each session gets one
 when it registers: the name given with `brains fresh -as NAME`, or its role and the lowest number
@@ -92,9 +95,10 @@ no session in view has, as in auditor1. Claude Code shows it as the conversation
 latest session in that role there). A nickname is unique only among sessions in view, so the
 numbers stay small: auditor1 comes free again once its session has been idle 30 days.
 
-**Fresh eyes is a role behavior.** A session in a fresh-eyes role gets four tools: file and
-withdraw, plus mine and show, which reach only its own filings. It can file findings, take back
-its own, and read their resolutions, but nothing else in brains, so earlier rounds can't steer it.
+**Fresh eyes is a role behavior.** A session in a fresh-eyes role gets five tools: file and
+withdraw, mine and show, which reach only its own filings, and brief. It can file findings, take
+back its own, and read their resolutions, but nothing else in brains, so earlier rounds can't
+steer it.
 A plain session that registers in a fresh-eyes role loses its other tools from then on. This keeps
 a reader from being steered; it isn't containment, since brains doesn't limit what Claude Code
 itself can do. If a fixer is editing while auditors read, give the auditors a git worktree so they
@@ -115,6 +119,13 @@ the chain is for the record, not for reading back through. What replacement does
 loose end carried from handoff to handoff; that belongs in its own improvement task, which stays
 open until someone acts on it.
 
+**Sessions are trusted to follow their instructions.** The tools say how to use them, and brains
+checks what keeps the record readable, not every rule a session is told. A claim marks who is
+working on a task, but it isn't a lock: any session can close a claimed task, so a claim left by a
+session that stopped never blocks the next one, and the owner has nothing to clear. The close tool
+says an audit finding needs an outcome, and sessions give one; the store doesn't check. A state a
+session reaches on purpose, such as withdrawing the only open handoff, is allowed.
+
 **A server recognizes its conversation.** Claude Code passes every MCP server it starts the
 conversation's own ID, and that's what `brains fresh` chose and recorded as `session.external_id`,
 so a server started without being told its session still finds it. That covers a brains server
@@ -122,7 +133,10 @@ restarting mid-conversation and a conversation reopened with plain `claude --res
 instead of `brains resume`, since a resumed conversation keeps its ID. A session that registers
 itself records its conversation too, which is also what lets `brains resume` reopen it. One
 conversation is one session: registering a conversation brains already knows is refused, naming
-it, rather than starting a second record for work that's already someone's.
+it, rather than starting a second record for work that's already someone's. Likewise a server
+serves one session, so once it has one, register isn't offered again. Resuming by code reaches
+only a session of this conversation, or one with no conversation recorded, which then takes this
+one.
 
 **Old work leaves view; nothing is deleted.** A task stays in view while it's open, while it stands
 as a decision (accepted as designed, proven false, deferred), and for 30 days after it closes
@@ -137,7 +151,8 @@ again and the fixer closes the repeats as their duplicates; deferred work hasn't
 a session uses and the repos it works on sit under one path. Repos are cloned to
 `REPOS/<owner>/<repo>`, which makes the path derivable from a repository's identifier on any
 machine; any other first-level folder under `REPOS/` is a scratch copy. Nothing inside `REPOS/` is
-tracked.
+tracked. The root holds the clones but isn't one of them, so brains tells each session where its
+repo's clone is, found from the folder the session started in, or where the clone goes.
 
 ## Tables
 
@@ -166,19 +181,25 @@ brains tools, because brains is registered with Claude Code at user scope.
 
     brains init                      create a persona's database from nothing
     brains install                   copy a build to the per-user install path
-    brains mcp [-session CODE]       run as an MCP server over stdio
+    brains mcp [-session CODE] [-dir DIR]      run as an MCP server over stdio
     brains fresh [-as NAME] ROLE REPO      register a session and start Claude Code as it
     brains resume NAME | ROLE REPO         continue a session brains knows the conversation of
     brains roles | role              list roles; show, define, or change one
-    brains beliefs | believe | accept | reject | retire      work with beliefs
+    brains beliefs | belief | believe | accept | reject | retire      work with beliefs
     brains tasks | task | file | close | sessions          work with tasks as you
 
 MCP tools, full mode: register, file, withdraw, inbox, mine, show, claim, release, close, list,
-propose. A session brains already knows, because `brains fresh` registered it or because brains
-recognized its conversation, isn't offered register. Fresh eyes: file, withdraw, mine, show.
-Commands and tools take a code by its ending (the four characters agents cite) when nothing else
-in view ends that way, and name the candidates when something does. A repo can be given by its
-name alone once brains knows it, unless two owners have one by that name.
+propose, brief. A session brains already knows, because it registered, because `brains fresh`
+registered it, or because brains recognized its conversation, isn't offered register. Fresh eyes:
+file, withdraw, mine, show, brief. Commands and tools take a code by its ending (the four
+characters agents cite) when nothing else in view ends that way, and name the candidates when
+something does. A repo can be given by its name alone once brains knows it, unless two owners
+have one by that name.
+
+In bash, brains completes its own arguments: `complete -C brains brains` has bash run it
+with the command line in `COMP_LINE`, and it prints the commands, flags, roles, repos, nicknames
+and code endings that fit, reading the database without logging. Command Prompt offers programs
+no such hook.
 
 Lists show an open task that carries a note as "open, noted": in the audit loop, that means the
 fixer confirmed it and put it down with a sketch of the fix.
